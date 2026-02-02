@@ -37,7 +37,6 @@
 4. **Assign your mesh** to material slots (Assign tab)
 5. **Generate LODs** (Generate tab)
 6. **Export FBX** (Export tab)
-7. **Convert with FrostMeshy**
 
 ---
 
