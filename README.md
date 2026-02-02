@@ -2,7 +2,7 @@
 
 **Author:** Clay MacDonald  
 **Blender Version:** 4.5+  
-**Purpose:** Generate LOD meshes for Frostbite engine modding using mesh.res templates from Frosty Editor. Exports FBX files compatible with FrostMeshy conversion tool.
+**Purpose:** Generate LOD meshes for Frostbite engine modding using mesh.res templates from Frosty Editor.
 
 ---
 
