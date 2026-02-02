@@ -13,9 +13,8 @@
 3. [Complete Workflow](#complete-workflow)
 4. [Panel Reference](#panel-reference)
 5. [Preferences](#preferences)
-6. [FrostMeshy Integration](#frostmeshy-integration)
-7. [Troubleshooting](#troubleshooting)
-8. [Technical Notes](#technical-notes)
+6. [Troubleshooting](#troubleshooting)
+7. [Technical Notes](#technical-notes)
 
 ---
 
