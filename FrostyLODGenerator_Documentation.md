@@ -111,13 +111,6 @@ In the **Export tab**:
 2. Keep **Scale** at 0.01
 3. Click **Export FBX**
 
-### Step 9: Convert with FrostMeshy
-
-1. Open FrostMeshy
-2. Load your FBX
-3. Load the mesh.res as template
-4. Convert and import to Frosty Editor
-
 ---
 
 ## Panel Reference
@@ -224,24 +217,6 @@ Access: **Edit → Preferences → Add-ons → Frosty LOD Generator**
 - Confirm Destructive Actions
 - Auto-Organize LODs into Collections
 
----
-
-## FrostMeshy Integration
-
-### Naming Convention
-```
-materialname:lod0
-materialname:lod1
-materialname:lod2
-...
-```
-
-### Scale
-- Export at **0.01** (Frostbite game scale)
-- 1 Blender unit ≈ 1 meter in-game
-
----
-
 ## Troubleshooting
 
 | Problem | Solution |
@@ -278,14 +253,4 @@ bone_axis = Y-up
 
 ---
 
-## Version History
-
-- **v2.9.1** - Removed auto-assign (manual only)
-- **v2.9** - Transform prep, collections, poly counts
-- **v2.8** - Addon preferences
-- **v2.7** - LOD0 renames source
-- **v2.6** - Non-destructive decimation
-
----
-
-**Related Tools:** Frosty Editor, FrostMeshy, Blender
+**Related Tools:** [Frosty Editor](https://github.com/CadeEvs/FrostyToolsuite/releases), FrostMeshy, [Blender](https://www.blender.org/)
