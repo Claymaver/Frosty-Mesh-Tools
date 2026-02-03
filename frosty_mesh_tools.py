@@ -1231,54 +1231,6 @@ class FROSTY_OT_prep_transforms(Operator):
         return {'FINISHED'}
 
 
-class FROSTY_OT_check_transforms(Operator):
-    """Check if transforms are correctly set up for Frostbite"""
-    bl_idname = "frosty.check_transforms"
-    bl_label = "Check Transforms"
-    bl_description = "Validate that selected meshes have correct transforms for Frostbite export"
-
-    def execute(self, context):
-        issues = []
-        meshes = [obj for obj in context.selected_objects if obj.type == 'MESH']
-        
-        if not meshes:
-            self.report({'WARNING'}, "No meshes selected")
-            return {'CANCELLED'}
-        
-        for obj in meshes:
-            if not all(abs(s - 1.0) < 0.001 for s in obj.scale):
-                issues.append(f"{obj.name}: Scale not applied ({obj.scale[0]:.2f}, {obj.scale[1]:.2f}, {obj.scale[2]:.2f})")
-            
-            rot_x = math.degrees(obj.rotation_euler.x)
-            if abs(rot_x - 90) > 1.0 and abs(rot_x) > 1.0:
-                issues.append(f"{obj.name}: X rotation is {rot_x:.1f}° (expected ~90° or 0°)")
-        
-        if issues:
-            self.report({'WARNING'}, f"Found {len(issues)} issues - see console")
-            print("\n" + "="*50)
-            print("TRANSFORM CHECK ISSUES:")
-            print("="*50)
-            for issue in issues:
-                print(f"  ✗ {issue}")
-            print("="*50 + "\n")
-        else:
-            show_notification(self, f"All {len(meshes)} meshes passed transform check!", icon='CHECKMARK')
-        
-        return {'FINISHED'}
-
-
-class FROSTY_OT_apply_all_transforms(Operator):
-    bl_idname = "frosty.apply_all_transforms"
-    bl_label = "Apply All Transforms"
-    bl_description = "Apply location, rotation, and scale to selected objects"
-    bl_options = {'REGISTER', 'UNDO'}
-
-    def execute(self, context):
-        bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
-        self.report({'INFO'}, "Applied transforms")
-        return {'FINISHED'}
-
-
 class FROSTY_OT_rename_lod0_back(Operator):
     bl_idname = "frosty.rename_lod0_back"
     bl_label = "Rename LOD0 Back"
@@ -1638,11 +1590,6 @@ class FROSTY_PT_main(Panel):
         col.scale_y = 1.2
         col.operator("frosty.prep_transforms", text="Full Transform Prep", icon='CON_ROTLIKE')
         
-        col.separator()
-        row = col.row(align=True)
-        row.operator("frosty.check_transforms", text="Check", icon='CHECKMARK')
-        row.operator("frosty.apply_all_transforms", text="Apply", icon='OBJECT_DATA')
-        
         box.separator()
         col = box.column(align=True)
         col.scale_y = 0.85
@@ -1702,8 +1649,6 @@ classes = (
     FROSTY_OT_show_all,
     FROSTY_OT_open_preferences,
     FROSTY_OT_prep_transforms,
-    FROSTY_OT_check_transforms,
-    FROSTY_OT_apply_all_transforms,
     FROSTY_OT_rename_lod0_back,
     FROSTY_OT_print_poly_counts,
     FROSTY_UL_material_slots,
