@@ -43,6 +43,6 @@ jobs:
           files: |
             frosty_mesh_tools.py
           draft: false
-          prerelease: ${{ contains(steps.get_version.outputs.VERSION, 'beta') || contains(steps.get_version.outputs.VERSION, 'alpha') }}
+          prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
