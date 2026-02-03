@@ -1,0 +1,48 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*' # Trigger on version tags like v1.0.0
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    
+    permissions:
+      contents: write 
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Get version from tag
+        id: get_version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+      
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          name: Frosty Mesh Tools ${{ steps.get_version.outputs.VERSION }}
+          body: |
+            ## Frosty Mesh Tools ${{ steps.get_version.outputs.VERSION }}
+            
+            ### Installation
+            1. Download `frosty_mesh_tools.py` below
+            2. In Blender: **Edit → Preferences → Add-ons**
+            3. Click **Install...** and select the downloaded file
+            4. Enable the addon
+            
+            ### Requirements
+            - Blender 4.5+ (tested on 4.5 and 5.0)
+            - [Frosty Editor](https://frostyeditor.com/)
+            
+            ---
+            
+            See the [Wiki](../../wiki) for full documentation.
+          files: |
+            frosty_mesh_tools.py
+          draft: false
+          prerelease: ${{ contains(steps.get_version.outputs.VERSION, 'beta') || contains(steps.get_version.outputs.VERSION, 'alpha') }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
