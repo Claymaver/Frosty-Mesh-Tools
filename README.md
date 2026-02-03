@@ -15,7 +15,7 @@ A Blender addon for generating LOD (Level of Detail) meshes for Frostbite engine
 ## Features
 
 - **Template-Based Workflow** - Load mesh.res files from Frosty Editor to get exact material/LOD structure
-- **Non-Destructive Decimation** - Live decimate modifiers for iterative adjustment
+- **Non-Destructive Decimation** - Live decimate modifiers for real-time adjustment
 - **Transform Prep Tools** - One-click Frostbite coordinate system fix
 - **LOD Collections** - Auto-organize meshes into LOD0, LOD1, etc. collections
 - **Configurable Presets** - High Quality, Medium, and Aggressive decimation presets
@@ -24,7 +24,7 @@ A Blender addon for generating LOD (Level of Detail) meshes for Frostbite engine
 ## Requirements
 
 - Blender 4.5 or newer (tested on 4.5 and 5.0)
-- [Frosty Editor](https://frostyeditor.com/) - For exporting mesh.res templates
+- [Frosty Editor](https://github.com/CadeEvs/FrostyToolsuite/releases) - For exporting mesh.res templates
 
 ## Installation
 
@@ -40,12 +40,12 @@ A Blender addon for generating LOD (Level of Detail) meshes for Frostbite engine
 1. TEMPLATE  →  Load mesh.res from Frosty Editor export
 2. ASSIGN    →  Assign your meshes to material slots
 3. GENERATE  →  Create LODs with decimation
-4. EXPORT
+4. EXPORT    →  FBX at 0.01 scale
 ```
 
-## Contributing
+## Documentation
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+- 📖 [Full Documentation](docs/FrostyMeshTools_Documentation.md) - Complete workflow and reference
 
 ## License
 
@@ -61,9 +61,6 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 **Author:** Clay MacDonald
 
-**Related Tools:**
-- [Frosty Editor](https://frostyeditor.com/)
-
 ---
 
 ## Changelog
@@ -75,4 +72,3 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 - Transform prep tools for Frostbite
 - LOD collection organization
 - Addon preferences system
-- Full documentation
