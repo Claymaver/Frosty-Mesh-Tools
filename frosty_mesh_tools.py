@@ -1,10 +1,10 @@
 bl_info = {
-    "name": "Frosty LOD Generator (Beta)",
+    "name": "Frosty Mesh Tools (Beta)",
     "author": "Clay MacDonald",
-    "version": (0, 2, 0),
+    "version": (1, 0, 0),
     "blender": (4, 5, 0),
-    "location": "View3D > Sidebar > Frosty LOD",
-    "description": "Generate LODs for FrostMeshy/Frosty Editor using mesh.res templates",
+    "location": "View3D > Sidebar > Frosty Mesh",
+    "description": "Generate LODs for Frostbite engine modding using mesh.res templates",
     "doc_url": "",
     "category": "Object",
 }
@@ -1174,11 +1174,11 @@ class FROSTY_UL_material_slots(bpy.types.UIList):
 # ============================================================================
 
 class FROSTY_PT_main(Panel):
-    bl_label = "Frosty LOD Generator (Beta)"
+    bl_label = "Frosty Mesh Tools"
     bl_idname = "FROSTY_PT_main"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
-    bl_category = 'Frosty LOD'
+    bl_category = 'Frosty Mesh'
 
     def draw(self, context):
         layout = self.layout
@@ -1186,7 +1186,7 @@ class FROSTY_PT_main(Panel):
         prefs = get_prefs()
         
         row = layout.row()
-        row.label(text="v2.9.1", icon='MODIFIER')
+        row.label(text="v1.0-beta", icon='MODIFIER')
         row.operator("frosty.open_preferences", text="", icon='PREFERENCES')
         
         row = layout.row(align=True)

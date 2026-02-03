@@ -1,8 +1,9 @@
-# Frosty LOD Generator (Beta)
+# Frosty Mesh Tools v1.0-beta
 
 **Author:** Clay MacDonald  
-**Blender Version:** 4.5+  
-**Purpose:** Generate LOD meshes for Frostbite engine modding using mesh.res templates from Frosty Editor. Exports FBX files compatible with FrostMeshy conversion tool.
+**Blender Version:** 4.5+ (tested on 4.5 and 5.0, may work on other versions)  
+**Status:** Beta - Testing Phase  
+**Purpose:** Generate LOD meshes for Frostbite engine modding using mesh.res templates from Frosty Editor.
 
 ---
 
@@ -13,19 +14,18 @@
 3. [Complete Workflow](#complete-workflow)
 4. [Panel Reference](#panel-reference)
 5. [Preferences](#preferences)
-6. [FrostMeshy Integration](#frostmeshy-integration)
-7. [Troubleshooting](#troubleshooting)
-8. [Technical Notes](#technical-notes)
+6. [Troubleshooting](#troubleshooting)
+7. [Technical Notes](#technical-notes)
 
 ---
 
 ## Installation
 
-1. Download `frosty_lod_generator.py`
+1. Download `frosty_mesh_tools.py`
 2. In Blender: **Edit → Preferences → Add-ons**
 3. Click **Install...** and select the .py file
 4. Enable the addon by checking the box
-5. The panel appears in **3D View → Sidebar → Frosty LOD** tab
+5. The panel appears in **3D View → Sidebar → Frosty Mesh** tab
 
 ---
 
@@ -37,7 +37,6 @@
 4. **Assign your mesh** to material slots (Assign tab)
 5. **Generate LODs** (Generate tab)
 6. **Export FBX** (Export tab)
-7. **Convert with FrostMeshy**
 
 ---
 
@@ -48,7 +47,17 @@
 In Frosty Editor:
 1. Find the asset you want to replace
 2. Right-click → **Export**
-3. Save to a "Samples" folder: `Samples/AssetName/assetname_mesh.res`
+3. Save the `*_mesh.res` file (not `blocks.res`)
+
+Organize templates in a folder structure:
+```
+Samples/
+├── DarthVader/
+│   └── darthvader_01_mesh.res
+├── Stormtrooper/
+│   └── stormtrooper_mesh.res
+└── ...
+```
 
 ### Step 2: Prepare Your Mesh
 
@@ -111,13 +120,6 @@ In the **Export tab**:
 2. Keep **Scale** at 0.01
 3. Click **Export FBX**
 
-### Step 9: Convert with FrostMeshy
-
-1. Open FrostMeshy
-2. Load your FBX
-3. Load the mesh.res as template
-4. Convert and import to Frosty Editor
-
 ---
 
 ## Panel Reference
@@ -131,16 +133,6 @@ In the **Export tab**:
 | **Refresh** | Rescan samples folder |
 | **Browse...** | Manually select mesh.res |
 | **Last** | Reload last used template |
-
-**Folder structure:**
-```
-Samples/
-├── DarthVader/
-│   └── darthvader_01_mesh.res
-├── Stormtrooper/
-│   └── stormtrooper_mesh.res
-└── ...
-```
 
 ### Assign Tab
 
@@ -203,7 +195,7 @@ Samples/
 
 ## Preferences
 
-Access: **Edit → Preferences → Add-ons → Frosty LOD Generator**
+Access: **Edit → Preferences → Add-ons → Frosty Mesh Tools**
 
 ### Default Paths
 - Default Samples Folder
@@ -226,30 +218,13 @@ Access: **Edit → Preferences → Add-ons → Frosty LOD Generator**
 
 ---
 
-## FrostMeshy Integration
-
-### Naming Convention
-```
-materialname:lod0
-materialname:lod1
-materialname:lod2
-...
-```
-
-### Scale
-- Export at **0.01** (Frostbite game scale)
-- 1 Blender unit ≈ 1 meter in-game
-
----
-
 ## Troubleshooting
 
 | Problem | Solution |
 |---------|----------|
 | No materials found | Use `*_mesh.res`, not `blocks.res` |
-| Wrong scale in-game | Export at 0.01 |
-| Model sideways | Run Full Transform Prep |
-| Missing LODs | Check naming `mat:lodN` |
+| Wrong scale in-game | Export at 0.01 scale |
+| Model sideways/rotated | Run **Full Transform Prep** |
 | Decimate artifacts | Try different method or higher ratios |
 
 ---
@@ -280,12 +255,13 @@ bone_axis = Y-up
 
 ## Version History
 
-- **v2.9.1** - Removed auto-assign (manual only)
-- **v2.9** - Transform prep, collections, poly counts
-- **v2.8** - Addon preferences
-- **v2.7** - LOD0 renames source
-- **v2.6** - Non-destructive decimation
+- **v1.0-beta** - Initial beta release for testing
+  - Template-based LOD generation
+  - Non-destructive decimation workflow
+  - Transform prep tools for Frostbite
+  - LOD collection organization
+  - Addon preferences system
 
 ---
 
-**Related Tools:** Frosty Editor, FrostMeshy, Blender
+**Related Tools:** [Frosty Editor](https://frostyeditor.com/)
