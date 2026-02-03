@@ -35,11 +35,11 @@ jobs:
             
             ### Requirements
             - Blender 4.5+ (tested on 4.5 and 5.0)
-            - [Frosty Editor](https://frostyeditor.com/)
+            - [Frosty Editor](https://github.com/CadeEvs/FrostyToolsuite/releases) (for extracting and repacking `.fbx` and `.res` files)
             
             ---
             
-            See the [Wiki](../../wiki) for full documentation.
+            See the [Wiki](https://github.com/Claymaver/Frosty-Mesh-Tools/wiki) for full documentation.
           files: |
             frosty_mesh_tools.py
           draft: false

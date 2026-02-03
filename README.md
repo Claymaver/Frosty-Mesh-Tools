@@ -9,7 +9,7 @@ A Blender addon for generating LOD (Level of Detail) meshes for Frostbite engine
 > **Tested on:** Blender 4.5 and 5.0  
 > **May work on:** Other versions (untested)
 
-![Frosty Mesh Tools Panel](https://via.placeholder.com/600x400?text=Screenshot+Coming+Soon)
+![Frosty Mesh Tools Panel](images/Preview.png)
 
 ## Features
 
@@ -43,15 +43,8 @@ A Blender addon for generating LOD (Level of Detail) meshes for Frostbite engine
 ```
 
 ## Documentation
-<<<<<<< Updated upstream
-=======
 
-
-
-## Contributing
->>>>>>> Stashed changes
-
-- 📖 [Full Documentation](docs/FrostyMeshTools_Documentation.md) - Complete workflow and reference
+- 📖 [Full Documentation](https://github.com/Claymaver/Frosty-Mesh-Tools/wiki) - Complete workflow and reference
 
 ## License
 
