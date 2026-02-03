@@ -5,7 +5,7 @@ bl_info = {
     "blender": (4, 5, 0),
     "location": "View3D > Sidebar > Frosty Mesh",
     "description": "Generate LODs for Frostbite engine modding using mesh.res templates",
-    "doc_url": "",
+    "doc_url": "https://github.com/yourusername/frosty-mesh-tools/blob/main/docs/FrostyMeshTools_Documentation.md",
     "category": "Object",
 }
 
@@ -13,12 +13,21 @@ import bpy
 import os
 import re
 import math
+import webbrowser
 from bpy.props import (
     StringProperty, IntProperty, FloatProperty,
     BoolProperty, EnumProperty, CollectionProperty, PointerProperty
 )
 from bpy.types import Operator, Panel, PropertyGroup, AddonPreferences
 from bpy_extras.io_utils import ImportHelper
+
+
+# ============================================================================
+# CONSTANTS
+# ============================================================================
+
+DOCS_URL = "https://github.com/yourusername/frosty-mesh-tools/blob/main/docs/FrostyMeshTools_Documentation.md"
+DECIMATE_MOD_NAME = "FrostyLOD_Decimate"
 
 
 # ============================================================================
@@ -30,18 +39,21 @@ class FrostyLODPreferences(AddonPreferences):
     
     default_samples_folder: StringProperty(
         name="Default Samples Folder",
+        description="Default folder containing exported mesh.res templates from Frosty Editor",
         default="",
         subtype='DIR_PATH'
     )
     
     default_export_path: StringProperty(
         name="Default Export Path",
+        description="Default folder for FBX exports",
         default="//",
         subtype='DIR_PATH'
     )
     
     default_export_scale: FloatProperty(
         name="Default Export Scale",
+        description="Default scale for FBX export. Use 0.01 for Frostbite games",
         default=0.01,
         min=0.001,
         max=1000.0
@@ -49,17 +61,19 @@ class FrostyLODPreferences(AddonPreferences):
     
     default_preset: EnumProperty(
         name="Default Preset",
+        description="Default decimation preset for new scenes",
         items=[
-            ('HIGH', "High Quality", ""),
-            ('MEDIUM', "Medium", ""),
-            ('AGGRESSIVE', "Aggressive", ""),
-            ('CUSTOM', "Custom", ""),
+            ('HIGH', "High Quality", "Conservative decimation, best visual quality"),
+            ('MEDIUM', "Medium", "Balanced decimation"),
+            ('AGGRESSIVE', "Aggressive", "Heavy decimation, smaller file size"),
+            ('CUSTOM', "Custom", "Use custom ratio values"),
         ],
         default='HIGH'
     )
     
     default_lod1_ratio: FloatProperty(
         name="Default LOD1 Ratio",
+        description="Default polygon ratio for LOD1 (0.5 = 50% of original)",
         default=0.5,
         min=0.01, max=1.0,
         subtype='FACTOR'
@@ -67,6 +81,7 @@ class FrostyLODPreferences(AddonPreferences):
     
     default_ratio_step: FloatProperty(
         name="Default Ratio Step",
+        description="How much to reduce each subsequent LOD level",
         default=0.1,
         min=0.01, max=0.5,
         subtype='FACTOR'
@@ -74,27 +89,36 @@ class FrostyLODPreferences(AddonPreferences):
     
     default_decimation_method: EnumProperty(
         name="Default Decimation Method",
+        description="Default algorithm for mesh decimation",
         items=[
-            ('COLLAPSE', "Collapse", ""),
-            ('UNSUBDIV', "Un-Subdivide", ""),
-            ('PLANAR', "Planar", ""),
+            ('COLLAPSE', "Collapse", "Edge collapse - best for most meshes"),
+            ('UNSUBDIV', "Un-Subdivide", "Reverse subdivision - good for subdivided meshes"),
+            ('PLANAR', "Planar", "Dissolve flat areas - good for hard surface"),
         ],
         default='COLLAPSE'
     )
     
     default_symmetry: EnumProperty(
         name="Default Symmetry",
-        items=[('NONE', "None", ""), ('X', "X", ""), ('Y', "Y", ""), ('Z', "Z", "")],
+        description="Preserve symmetry during decimation",
+        items=[
+            ('NONE', "None", "No symmetry preservation"),
+            ('X', "X", "Preserve X-axis symmetry"),
+            ('Y', "Y", "Preserve Y-axis symmetry"),
+            ('Z', "Z", "Preserve Z-axis symmetry"),
+        ],
         default='NONE'
     )
     
     auto_apply_defaults: BoolProperty(
         name="Auto-Apply Defaults to New Scenes",
+        description="Automatically apply default settings when opening a new file",
         default=True
     )
     
     remember_last_template: BoolProperty(
         name="Remember Last Template",
+        description="Remember the last loaded template for quick access",
         default=True
     )
     
@@ -102,11 +126,19 @@ class FrostyLODPreferences(AddonPreferences):
     
     confirm_destructive: BoolProperty(
         name="Confirm Destructive Actions",
+        description="Ask for confirmation before removing LODs or applying modifiers",
         default=True
     )
     
     auto_organize_collections: BoolProperty(
         name="Auto-Organize LODs into Collections",
+        description="Automatically sort generated LODs into collections by level",
+        default=True
+    )
+    
+    show_notifications: BoolProperty(
+        name="Show Success Notifications",
+        description="Show popup notifications after successful operations",
         default=True
     )
     
@@ -138,6 +170,7 @@ class FrostyLODPreferences(AddonPreferences):
         box.prop(self, "remember_last_template")
         box.prop(self, "confirm_destructive")
         box.prop(self, "auto_organize_collections")
+        box.prop(self, "show_notifications")
         
         layout.separator()
         row = layout.row()
@@ -148,6 +181,7 @@ class FrostyLODPreferences(AddonPreferences):
 class FROSTY_OT_apply_defaults_to_scene(Operator):
     bl_idname = "frosty.apply_defaults_to_scene"
     bl_label = "Apply Defaults to Scene"
+    bl_description = "Apply your saved default settings to the current scene"
     
     def execute(self, context):
         apply_defaults_to_scene(context)
@@ -158,6 +192,7 @@ class FROSTY_OT_apply_defaults_to_scene(Operator):
 class FROSTY_OT_reset_preferences(Operator):
     bl_idname = "frosty.reset_preferences"
     bl_label = "Reset to Factory Defaults"
+    bl_description = "Reset all preferences to their original values"
     
     def invoke(self, context, event):
         return context.window_manager.invoke_confirm(self, event)
@@ -176,6 +211,7 @@ class FROSTY_OT_reset_preferences(Operator):
         prefs.remember_last_template = True
         prefs.confirm_destructive = True
         prefs.auto_organize_collections = True
+        prefs.show_notifications = True
         prefs.last_template_path = ""
         self.report({'INFO'}, "Reset preferences")
         return {'FINISHED'}
@@ -200,6 +236,16 @@ def apply_defaults_to_scene(context):
     settings.ratio_step = prefs.default_ratio_step
     settings.decimation_method = prefs.default_decimation_method
     settings.symmetry_axis = prefs.default_symmetry
+
+
+def show_notification(self, message, title="Frosty Mesh Tools", icon='INFO'):
+    """Show a popup notification if enabled"""
+    prefs = get_prefs()
+    if prefs.show_notifications:
+        def draw(self, context):
+            self.layout.label(text=message)
+        bpy.context.window_manager.popup_menu(draw, title=title, icon=icon)
+    self.report({'INFO'}, message)
 
 
 # ============================================================================
@@ -353,11 +399,11 @@ def get_sample_items(self, context):
         _cached_folder = settings.samples_folder
         _cached_samples = scan_samples_folder(settings.samples_folder)
     
-    items = [('NONE', "-- Select Template --", "")]
+    items = [('NONE', "-- Select Template --", "Choose a mesh.res template to load")]
     for display_name, filepath in _cached_samples:
-        items.append((filepath, display_name, filepath))
+        items.append((filepath, display_name, f"Load template: {display_name}"))
     if len(items) == 1:
-        items.append(('NO_SAMPLES', "(No templates found)", ""))
+        items.append(('NO_SAMPLES', "(No templates found)", "No valid mesh.res files found in samples folder"))
     return items
 
 
@@ -388,9 +434,17 @@ class FrostyMaterialSlot(PropertyGroup):
     name: StringProperty(name="Material Name")
     min_lod: IntProperty(name="Min LOD", default=0)
     max_lod: IntProperty(name="Max LOD", default=5)
-    source_object: PointerProperty(name="Source Mesh", type=bpy.types.Object,
-                                   poll=lambda self, obj: obj.type == 'MESH')
-    enabled: BoolProperty(name="Enabled", default=True)
+    source_object: PointerProperty(
+        name="Source Mesh", 
+        type=bpy.types.Object,
+        description="The mesh to use for this material slot",
+        poll=lambda self, obj: obj.type == 'MESH'
+    )
+    enabled: BoolProperty(
+        name="Enabled", 
+        default=True,
+        description="Include this material in LOD generation"
+    )
 
 
 class FrostyLODSettings(PropertyGroup):
@@ -398,22 +452,28 @@ class FrostyLODSettings(PropertyGroup):
     ui_tab: EnumProperty(
         name="Tab",
         items=[
-            ('TEMPLATE', "Template", "Load mesh.res template"),
-            ('ASSIGN', "Assign", "Assign meshes to materials"),
-            ('GENERATE', "Generate", "LOD generation settings"),
-            ('EXPORT', "Export", "Export settings"),
-            ('TOOLS', "Tools", "Mesh preparation tools"),
+            ('TEMPLATE', "Template", "Load mesh.res template from Frosty Editor"),
+            ('ASSIGN', "Assign", "Assign your meshes to template material slots"),
+            ('GENERATE', "Generate", "Configure and generate LOD meshes"),
+            ('EXPORT', "Export", "Export LODs as FBX for game import"),
+            ('TOOLS', "Tools", "Mesh preparation and utility tools"),
         ],
         default='TEMPLATE'
     )
 
     samples_folder: StringProperty(
-        name="Samples Folder", 
+        name="Samples Folder",
+        description="Folder containing exported mesh.res templates (organized in subfolders)",
         default="", 
         subtype='DIR_PATH',
         update=on_samples_folder_changed
     )
-    selected_sample: EnumProperty(name="Template", items=get_sample_items, update=on_sample_selected)
+    selected_sample: EnumProperty(
+        name="Template", 
+        description="Select a template from your samples folder",
+        items=get_sample_items, 
+        update=on_sample_selected
+    )
 
     template_path: StringProperty(default="")
     template_mesh_path: StringProperty(default="")
@@ -422,16 +482,31 @@ class FrostyLODSettings(PropertyGroup):
     material_slots: CollectionProperty(type=FrostyMaterialSlot)
     active_material_index: IntProperty(default=0)
 
-    lod1_ratio: FloatProperty(name="LOD1 Ratio", default=0.5, min=0.01, max=1.0, subtype='FACTOR')
-    ratio_step: FloatProperty(name="Ratio Step", default=0.1, min=0.01, max=0.5, subtype='FACTOR')
+    lod1_ratio: FloatProperty(
+        name="LOD1 Ratio", 
+        description="Polygon ratio for LOD1. Lower = fewer polygons (0.5 = 50%)",
+        default=0.5, 
+        min=0.01, 
+        max=1.0, 
+        subtype='FACTOR'
+    )
+    ratio_step: FloatProperty(
+        name="Ratio Step", 
+        description="How much to reduce each subsequent LOD (0.1 = 10% less each level)",
+        default=0.1, 
+        min=0.01, 
+        max=0.5, 
+        subtype='FACTOR'
+    )
 
     preset: EnumProperty(
         name="Preset",
+        description="Quick decimation presets",
         items=[
-            ('CUSTOM', "Custom", ""),
-            ('HIGH', "High Quality", ""),
-            ('MEDIUM', "Medium", ""),
-            ('AGGRESSIVE', "Aggressive", ""),
+            ('CUSTOM', "Custom", "Use custom ratio values below"),
+            ('HIGH', "High Quality", "50% LOD1, 10% step - Best visual quality"),
+            ('MEDIUM', "Medium", "50% LOD1, 12% step - Balanced"),
+            ('AGGRESSIVE', "Aggressive", "40% LOD1, 10% step - Smaller file size"),
         ],
         default='HIGH',
         update=on_preset_changed
@@ -439,30 +514,56 @@ class FrostyLODSettings(PropertyGroup):
 
     decimation_method: EnumProperty(
         name="Method",
+        description="Algorithm used for mesh decimation",
         items=[
-            ('COLLAPSE', "Collapse", ""),
-            ('UNSUBDIV', "Un-Subdivide", ""),
-            ('PLANAR', "Planar", ""),
+            ('COLLAPSE', "Collapse", "Edge collapse - Best for organic and most meshes"),
+            ('UNSUBDIV', "Un-Subdivide", "Reverse subdivision - Good for cleanly subdivided meshes"),
+            ('PLANAR', "Planar", "Dissolve flat regions - Good for hard surface models"),
         ],
         default='COLLAPSE'
     )
 
     symmetry_axis: EnumProperty(
         name="Symmetry",
-        items=[('NONE', "None", ""), ('X', "X", ""), ('Y', "Y", ""), ('Z', "Z", "")],
+        description="Preserve symmetry during decimation (for symmetric models)",
+        items=[
+            ('NONE', "None", "No symmetry preservation"),
+            ('X', "X", "Preserve X-axis symmetry"),
+            ('Y', "Y", "Preserve Y-axis symmetry"),
+            ('Z', "Z", "Preserve Z-axis symmetry"),
+        ],
         default='NONE'
     )
+    
+    show_advanced: BoolProperty(
+        name="Show Advanced",
+        description="Show advanced decimation settings",
+        default=False
+    )
 
-    export_path: StringProperty(name="Export Path", default="//", subtype='DIR_PATH')
-    export_name: StringProperty(name="Export Name", default="mesh_export")
-    export_scale: FloatProperty(name="Scale", default=0.01, min=0.001, max=1000.0)
+    export_path: StringProperty(
+        name="Export Path", 
+        description="Folder to save exported FBX files",
+        default="//", 
+        subtype='DIR_PATH'
+    )
+    export_name: StringProperty(
+        name="Export Name", 
+        description="Filename for the exported FBX (without extension)",
+        default="mesh_export"
+    )
+    export_scale: FloatProperty(
+        name="Scale", 
+        description="Export scale. Use 0.01 for Frostbite games",
+        default=0.01, 
+        min=0.001, 
+        max=1000.0
+    )
 
 
 # ============================================================================
 # UTILITY FUNCTIONS
 # ============================================================================
-
-DECIMATE_MOD_NAME = "FrostyLOD_Decimate"
 
 def calculate_ratio_for_lod(settings, lod_level):
     if lod_level == 0:
@@ -571,23 +672,73 @@ def get_poly_counts_by_lod():
     return counts
 
 
+def get_mesh_poly_count(obj):
+    """Get polygon count for a mesh object"""
+    if obj and obj.type == 'MESH' and obj.data:
+        return len(obj.data.polygons)
+    return 0
+
+
+def get_validation_status(settings):
+    """Get validation status for generation readiness"""
+    issues = []
+    warnings = []
+    ready = []
+    
+    # Check template
+    if not settings.template_path:
+        issues.append("No template loaded")
+    else:
+        ready.append(f"Template: {settings.template_name}")
+    
+    # Check assignments
+    assigned, unassigned, total = get_slot_status(settings)
+    if assigned == 0:
+        issues.append("No meshes assigned")
+    elif unassigned > 0:
+        warnings.append(f"{unassigned} slot(s) not assigned")
+        ready.append(f"{assigned} mesh(es) assigned")
+    else:
+        ready.append(f"All {total} slots assigned")
+    
+    # Check for existing LODs
+    existing_lods = get_generated_lods()
+    if existing_lods:
+        warnings.append(f"{len(existing_lods)} existing LODs will be replaced")
+    
+    return issues, warnings, ready
+
+
 # ============================================================================
 # OPERATORS
 # ============================================================================
 
+class FROSTY_OT_open_docs(Operator):
+    bl_idname = "frosty.open_docs"
+    bl_label = "Open Documentation"
+    bl_description = "Open the online documentation in your web browser"
+    
+    def execute(self, context):
+        webbrowser.open(DOCS_URL)
+        return {'FINISHED'}
+
+
 class FROSTY_OT_refresh_samples(Operator):
     bl_idname = "frosty.refresh_samples"
     bl_label = "Refresh"
+    bl_description = "Rescan the samples folder for templates"
     
     def execute(self, context):
         global _cached_folder
         _cached_folder = ""
+        self.report({'INFO'}, "Refreshed samples list")
         return {'FINISHED'}
 
 
 class FROSTY_OT_load_template(Operator, ImportHelper):
     bl_idname = "frosty.load_template"
     bl_label = "Browse..."
+    bl_description = "Browse for a mesh.res template file exported from Frosty Editor"
     filter_glob: StringProperty(default="*_mesh.res;*.res", options={'HIDDEN'})
     
     def execute(self, context):
@@ -595,13 +746,17 @@ class FROSTY_OT_load_template(Operator, ImportHelper):
             self.report({'ERROR'}, "Select *_mesh.res, not blocks.res")
             return {'CANCELLED'}
         success, msg = load_template(context, self.filepath)
-        self.report({'INFO' if success else 'ERROR'}, msg)
+        if success:
+            show_notification(self, msg, icon='CHECKMARK')
+        else:
+            self.report({'ERROR'}, msg)
         return {'FINISHED'} if success else {'CANCELLED'}
 
 
 class FROSTY_OT_load_last_template(Operator):
     bl_idname = "frosty.load_last_template"
     bl_label = "Load Last Template"
+    bl_description = "Quickly reload the last used template"
     
     @classmethod
     def poll(cls, context):
@@ -611,13 +766,17 @@ class FROSTY_OT_load_last_template(Operator):
     def execute(self, context):
         prefs = get_prefs()
         success, msg = load_template(context, prefs.last_template_path)
-        self.report({'INFO' if success else 'ERROR'}, msg)
+        if success:
+            show_notification(self, msg, icon='CHECKMARK')
+        else:
+            self.report({'ERROR'}, msg)
         return {'FINISHED'} if success else {'CANCELLED'}
 
 
 class FROSTY_OT_assign_selected(Operator):
     bl_idname = "frosty.assign_selected"
     bl_label = "Assign Selected"
+    bl_description = "Assign the currently selected mesh to this material slot"
     bl_options = {'REGISTER', 'UNDO'}
 
     @classmethod
@@ -630,30 +789,35 @@ class FROSTY_OT_assign_selected(Operator):
         if settings.active_material_index < len(settings.material_slots):
             slot = settings.material_slots[settings.active_material_index]
             slot.source_object = context.active_object
-            self.report({'INFO'}, f"Assigned → {slot.name}")
+            self.report({'INFO'}, f"Assigned '{context.active_object.name}' → {slot.name}")
         return {'FINISHED'}
 
 
 class FROSTY_OT_clear_assignment(Operator):
     bl_idname = "frosty.clear_assignment"
     bl_label = "Clear"
+    bl_description = "Remove the mesh assignment from this slot"
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
         settings = context.scene.frosty_lod_settings
         if settings.active_material_index < len(settings.material_slots):
             settings.material_slots[settings.active_material_index].source_object = None
+            self.report({'INFO'}, "Cleared assignment")
         return {'FINISHED'}
 
 
 class FROSTY_OT_generate_lods(Operator):
     bl_idname = "frosty.generate_lods"
     bl_label = "Generate LODs"
+    bl_description = "Generate all LOD meshes based on current settings"
     bl_options = {'REGISTER', 'UNDO'}
 
     @classmethod
     def poll(cls, context):
-        return len(context.scene.frosty_lod_settings.material_slots) > 0
+        settings = context.scene.frosty_lod_settings
+        assigned, _, _ = get_slot_status(settings)
+        return assigned > 0
 
     def invoke(self, context, event):
         settings = context.scene.frosty_lod_settings
@@ -757,13 +921,14 @@ class FROSTY_OT_generate_lods(Operator):
         if prefs.auto_organize_collections:
             organize_lods_into_collections()
 
-        self.report({'INFO'}, f"Generated {total_created} LODs ({renamed_sources} renamed)")
+        show_notification(self, f"Generated {total_created} LODs successfully!", icon='CHECKMARK')
         return {'FINISHED'}
 
 
 class FROSTY_OT_update_ratios(Operator):
     bl_idname = "frosty.update_ratios"
     bl_label = "Update Ratios"
+    bl_description = "Update decimation ratios on existing LODs without regenerating"
     bl_options = {'REGISTER', 'UNDO'}
 
     @classmethod
@@ -802,6 +967,7 @@ class FROSTY_OT_update_ratios(Operator):
 class FROSTY_OT_apply_modifiers(Operator):
     bl_idname = "frosty.apply_modifiers"
     bl_label = "Apply All Modifiers"
+    bl_description = "Permanently apply decimation modifiers to all LODs (cannot be undone)"
     bl_options = {'REGISTER', 'UNDO'}
 
     @classmethod
@@ -824,13 +990,14 @@ class FROSTY_OT_apply_modifiers(Operator):
                 bpy.ops.object.modifier_apply(modifier=mod.name)
                 applied += 1
         
-        self.report({'INFO'}, f"Applied {applied} modifiers")
+        show_notification(self, f"Applied {applied} modifiers", icon='CHECKMARK')
         return {'FINISHED'}
 
 
 class FROSTY_OT_organize_collections(Operator):
     bl_idname = "frosty.organize_collections"
     bl_label = "Organize into Collections"
+    bl_description = "Sort all LOD meshes into collections by LOD level (LOD0, LOD1, etc.)"
     bl_options = {'REGISTER', 'UNDO'}
 
     @classmethod
@@ -846,6 +1013,7 @@ class FROSTY_OT_organize_collections(Operator):
 class FROSTY_OT_export_fbx(Operator):
     bl_idname = "frosty.export_fbx"
     bl_label = "Export FBX"
+    bl_description = "Export all LOD meshes and armatures to an FBX file"
 
     @classmethod
     def poll(cls, context):
@@ -891,14 +1059,14 @@ class FROSTY_OT_export_fbx(Operator):
             secondary_bone_axis='X',
         )
 
-        self.report({'INFO'}, f"Exported {len(lod_objects)} meshes to {filepath}")
+        show_notification(self, f"Exported {len(lod_objects)} meshes to:\n{filepath}", icon='CHECKMARK')
         return {'FINISHED'}
 
 
 class FROSTY_OT_cleanup_lods(Operator):
     bl_idname = "frosty.cleanup_lods"
     bl_label = "Remove Generated LODs (Keep LOD0)"
-    bl_description = "Removes LOD1+ and keeps LOD0 (your source meshes)"
+    bl_description = "Delete all generated LOD1+ meshes while keeping LOD0 (your source meshes)"
     bl_options = {'REGISTER', 'UNDO'}
 
     def invoke(self, context, event):
@@ -932,6 +1100,7 @@ class FROSTY_OT_cleanup_lods(Operator):
 class FROSTY_OT_select_lod(Operator):
     bl_idname = "frosty.select_lod"
     bl_label = "Select"
+    bl_description = "Select all meshes of this LOD level"
     bl_options = {'REGISTER', 'UNDO'}
     lod_level: IntProperty(default=0)
 
@@ -944,12 +1113,14 @@ class FROSTY_OT_select_lod(Operator):
                 count += 1
                 if count == 1:
                     context.view_layer.objects.active = obj
+        self.report({'INFO'}, f"Selected {count} LOD{self.lod_level} meshes")
         return {'FINISHED'}
 
 
 class FROSTY_OT_isolate_lod(Operator):
     bl_idname = "frosty.isolate_lod"
     bl_label = "Isolate"
+    bl_description = "Show only this LOD level, hide all others"
     bl_options = {'REGISTER', 'UNDO'}
     lod_level: IntProperty(default=0)
 
@@ -957,12 +1128,14 @@ class FROSTY_OT_isolate_lod(Operator):
         for obj in bpy.data.objects:
             if ':lod' in obj.name.lower() and obj.type == 'MESH':
                 obj.hide_viewport = not obj.name.lower().endswith(f':lod{self.lod_level}')
+        self.report({'INFO'}, f"Isolated LOD{self.lod_level}")
         return {'FINISHED'}
 
 
 class FROSTY_OT_show_all(Operator):
     bl_idname = "frosty.show_all"
     bl_label = "Show All"
+    bl_description = "Unhide all LOD meshes"
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
@@ -975,6 +1148,7 @@ class FROSTY_OT_show_all(Operator):
 class FROSTY_OT_open_preferences(Operator):
     bl_idname = "frosty.open_preferences"
     bl_label = "Preferences"
+    bl_description = "Open addon preferences to configure defaults"
     
     def execute(self, context):
         bpy.ops.preferences.addon_show(module=__name__)
@@ -989,7 +1163,7 @@ class FROSTY_OT_prep_transforms(Operator):
     """Prepare mesh transforms for Frostbite (90° X rotation workflow)"""
     bl_idname = "frosty.prep_transforms"
     bl_label = "Prep Transforms for Frostbite"
-    bl_description = "Full transform prep: clear parents, apply transforms, rotate -90/+90 on X, re-parent to armature"
+    bl_description = "Complete transform preparation: clears parents, applies transforms, rotates for Frostbite coordinates, and re-parents to armature"
     bl_options = {'REGISTER', 'UNDO'}
 
     @classmethod
@@ -1053,7 +1227,7 @@ class FROSTY_OT_prep_transforms(Operator):
         for mesh in meshes:
             mesh.select_set(True)
         
-        self.report({'INFO'}, f"Prepared transforms for {len(meshes)} meshes")
+        show_notification(self, f"Prepared transforms for {len(meshes)} meshes", icon='CHECKMARK')
         return {'FINISHED'}
 
 
@@ -1061,6 +1235,7 @@ class FROSTY_OT_check_transforms(Operator):
     """Check if transforms are correctly set up for Frostbite"""
     bl_idname = "frosty.check_transforms"
     bl_label = "Check Transforms"
+    bl_description = "Validate that selected meshes have correct transforms for Frostbite export"
 
     def execute(self, context):
         issues = []
@@ -1087,7 +1262,7 @@ class FROSTY_OT_check_transforms(Operator):
                 print(f"  ✗ {issue}")
             print("="*50 + "\n")
         else:
-            self.report({'INFO'}, f"All {len(meshes)} meshes look good!")
+            show_notification(self, f"All {len(meshes)} meshes passed transform check!", icon='CHECKMARK')
         
         return {'FINISHED'}
 
@@ -1095,6 +1270,7 @@ class FROSTY_OT_check_transforms(Operator):
 class FROSTY_OT_apply_all_transforms(Operator):
     bl_idname = "frosty.apply_all_transforms"
     bl_label = "Apply All Transforms"
+    bl_description = "Apply location, rotation, and scale to selected objects"
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
@@ -1106,7 +1282,7 @@ class FROSTY_OT_apply_all_transforms(Operator):
 class FROSTY_OT_rename_lod0_back(Operator):
     bl_idname = "frosty.rename_lod0_back"
     bl_label = "Rename LOD0 Back"
-    bl_description = "Remove :lod0 suffix from LOD0 meshes"
+    bl_description = "Remove the :lod0 suffix from LOD0 meshes to restore original names"
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
@@ -1125,6 +1301,7 @@ class FROSTY_OT_rename_lod0_back(Operator):
 class FROSTY_OT_print_poly_counts(Operator):
     bl_idname = "frosty.print_poly_counts"
     bl_label = "Print Poly Counts"
+    bl_description = "Print detailed polygon counts per LOD level to the console"
 
     def execute(self, context):
         counts = get_poly_counts_by_lod()
@@ -1160,13 +1337,28 @@ class FROSTY_UL_material_slots(bpy.types.UIList):
     def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
         slot = item
         row = layout.row(align=True)
+        
+        # Enable checkbox
         row.prop(slot, "enabled", text="")
+        
+        # Main content (dimmed if disabled)
         sub = row.row(align=True)
         sub.active = slot.enabled
+        
+        # Material name
         sub.label(text=slot.name)
-        sub.label(text=f"{slot.min_lod}-{slot.max_lod}")
-        has_valid = slot.source_object and is_valid(slot.source_object)
-        sub.label(text="", icon='CHECKMARK' if has_valid else 'BLANK1')
+        
+        # LOD range
+        sub.label(text=f"L{slot.min_lod}-{slot.max_lod}")
+        
+        # Poly count (if assigned)
+        if slot.source_object and is_valid(slot.source_object):
+            poly_count = get_mesh_poly_count(slot.source_object)
+            sub.label(text=f"{poly_count:,}")
+            sub.label(text="", icon='CHECKMARK')
+        else:
+            sub.label(text="--")
+            sub.label(text="", icon='BLANK1')
 
 
 # ============================================================================
@@ -1185,10 +1377,14 @@ class FROSTY_PT_main(Panel):
         settings = context.scene.frosty_lod_settings
         prefs = get_prefs()
         
+        # Header row
         row = layout.row()
         row.label(text="v1.0-beta", icon='MODIFIER')
-        row.operator("frosty.open_preferences", text="", icon='PREFERENCES')
+        sub = row.row(align=True)
+        sub.operator("frosty.open_docs", text="", icon='HELP')
+        sub.operator("frosty.open_preferences", text="", icon='PREFERENCES')
         
+        # Tab buttons
         row = layout.row(align=True)
         row.scale_y = 1.2
         row.prop_enum(settings, "ui_tab", 'TEMPLATE')
@@ -1199,6 +1395,7 @@ class FROSTY_PT_main(Panel):
         
         layout.separator()
         
+        # Status bar
         if settings.template_path:
             box = layout.box()
             row = box.row()
@@ -1217,6 +1414,7 @@ class FROSTY_PT_main(Panel):
         
         layout.separator()
         
+        # Tab content
         if settings.ui_tab == 'TEMPLATE':
             self.draw_template_tab(context, layout, settings, prefs)
         elif settings.ui_tab == 'ASSIGN':
@@ -1259,6 +1457,14 @@ class FROSTY_PT_main(Panel):
             layout.label(text="Load a template first", icon='INFO')
             return
         
+        # Header for list columns
+        row = layout.row()
+        row.label(text="")  # Enable column
+        row.label(text="Material")
+        row.label(text="LODs")
+        row.label(text="Polys")
+        row.label(text="")  # Status column
+        
         layout.template_list("FROSTY_UL_material_slots", "", settings, "material_slots",
                             settings, "active_material_index", rows=6)
         
@@ -1268,6 +1474,11 @@ class FROSTY_PT_main(Panel):
             box = layout.box()
             box.label(text=f"{slot.name}", icon='MATERIAL')
             box.label(text=f"LOD Range: {slot.min_lod} - {slot.max_lod}")
+            
+            if slot.source_object and is_valid(slot.source_object):
+                poly_count = get_mesh_poly_count(slot.source_object)
+                box.label(text=f"Polygons: {poly_count:,}")
+            
             box.separator()
             box.prop(slot, "source_object", text="")
             row = box.row(align=True)
@@ -1279,12 +1490,35 @@ class FROSTY_PT_main(Panel):
                     icon='CHECKMARK' if unassigned == 0 else 'ERROR')
     
     def draw_generate_tab(self, context, layout, settings):
+        # Validation Panel
+        issues, warnings, ready = get_validation_status(settings)
+        
+        if issues or warnings:
+            box = layout.box()
+            box.label(text="Validation", icon='STATUSBAR')
+            
+            for item in ready:
+                row = box.row()
+                row.label(text=item, icon='CHECKMARK')
+            
+            for item in warnings:
+                row = box.row()
+                row.label(text=item, icon='ERROR')
+            
+            for item in issues:
+                row = box.row()
+                row.label(text=item, icon='CANCEL')
+            
+            layout.separator()
+        
+        # Preset and ratios
         layout.prop(settings, "preset")
         
         col = layout.column(align=True)
         col.prop(settings, "lod1_ratio", slider=True)
         col.prop(settings, "ratio_step", slider=True)
         
+        # Preview
         box = layout.box()
         box.label(text="Preview:", icon='VIEWZOOM')
         
@@ -1311,17 +1545,27 @@ class FROSTY_PT_main(Panel):
         
         layout.separator()
         
+        # Collapsible Advanced section
         box = layout.box()
-        box.label(text="Advanced", icon='PREFERENCES')
-        box.prop(settings, "decimation_method")
-        box.prop(settings, "symmetry_axis")
+        row = box.row()
+        row.prop(settings, "show_advanced", 
+                icon='TRIA_DOWN' if settings.show_advanced else 'TRIA_RIGHT',
+                icon_only=True, emboss=False)
+        row.label(text="Advanced Settings")
+        
+        if settings.show_advanced:
+            box.prop(settings, "decimation_method")
+            box.prop(settings, "symmetry_axis")
         
         layout.separator()
         
+        # Generate button
         row = layout.row()
         row.scale_y = 1.4
+        row.enabled = len(issues) == 0
         row.operator("frosty.generate_lods", icon='MOD_DECIM')
         
+        # Live modifier controls
         live_count = len(get_lods_with_modifiers())
         if live_count > 0:
             layout.separator()
@@ -1333,6 +1577,7 @@ class FROSTY_PT_main(Panel):
         
         layout.separator()
         
+        # Utilities
         box = layout.box()
         box.label(text="Utilities", icon='TOOL_SETTINGS')
         
@@ -1367,16 +1612,23 @@ class FROSTY_PT_main(Panel):
         lod_count = len(get_generated_lods())
         live_count = len(get_lods_with_modifiers())
         
-        if live_count > 0:
+        layout.separator()
+        
+        # Export validation
+        if lod_count == 0:
+            layout.label(text="No LODs to export", icon='ERROR')
+        elif live_count > 0:
             layout.label(text=f"Ready: {lod_count} LODs (modifiers applied on export)", icon='INFO')
         else:
-            layout.label(text=f"Ready: {lod_count} LODs", icon='INFO')
+            layout.label(text=f"Ready: {lod_count} LODs", icon='CHECKMARK')
         
         row = layout.row()
         row.scale_y = 1.4
+        row.enabled = lod_count > 0
         row.operator("frosty.export_fbx", icon='EXPORT')
         
-        layout.label(text="Armatures included if assigned & visible", icon='INFO')
+        layout.separator()
+        layout.label(text="Armatures included if visible", icon='INFO')
     
     def draw_tools_tab(self, context, layout, settings):
         box = layout.box()
@@ -1431,6 +1683,7 @@ classes = (
     FrostyLODPreferences,
     FROSTY_OT_apply_defaults_to_scene,
     FROSTY_OT_reset_preferences,
+    FROSTY_OT_open_docs,
     FrostyMaterialSlot,
     FrostyLODSettings,
     FROSTY_OT_refresh_samples,

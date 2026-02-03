@@ -1,9 +1,8 @@
 # Frosty Mesh Tools
 
-[![Blender](https://img.shields.io/badge/blender-%23F5792A.svg?style=flat-square&logo=blender&logoColor=white)](https://www.blender.org/)
-[![Code](https://img.shields.io/badge/Python-FFD43B?style=flat-square&logo=python&logoColor=blue)](https://www.python.org/)
-[![Status](https://img.shields.io/badge/build-beta-yellow?style=flat-square)]()
-
+![Blender](https://img.shields.io/badge/blender-%23F5792A.svg?style=for-the-badge&logo=blender&logoColor=white)
+![Python](https://img.shields.io/badge/Python-FFD43B?style=for-the-badge&logo=python&logoColor=blue)
+[![Status](https://img.shields.io/badge/Build_Status-Beta-red?style=for-the-badge)]()
 
 A Blender addon for generating LOD (Level of Detail) meshes for Frostbite engine modding. Works with mesh.res templates exported from Frosty Editor.
 
@@ -44,6 +43,13 @@ A Blender addon for generating LOD (Level of Detail) meshes for Frostbite engine
 ```
 
 ## Documentation
+<<<<<<< Updated upstream
+=======
+
+
+
+## Contributing
+>>>>>>> Stashed changes
 
 - 📖 [Full Documentation](docs/FrostyMeshTools_Documentation.md) - Complete workflow and reference
 
