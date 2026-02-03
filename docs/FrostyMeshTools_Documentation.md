@@ -1,8 +1,12 @@
 # Frosty Mesh Tools v1.0-beta
 
 **Author:** Clay MacDonald  
+<<<<<<<< HEAD:docs/FrostyMeshTools_Documentation.md
 **Blender Version:** 4.5+ (tested on 4.5 and 5.0, may work on other versions)  
 **Status:** Beta - Testing Phase  
+========
+**Blender Version:** 4.5+  
+>>>>>>>> a657b2885a9d79b733aa429c004b76cee6409f1c:README.md
 **Purpose:** Generate LOD meshes for Frostbite engine modding using mesh.res templates from Frosty Editor.
 
 ---
@@ -216,8 +220,11 @@ Access: **Edit → Preferences → Add-ons → Frosty Mesh Tools**
 - Confirm Destructive Actions
 - Auto-Organize LODs into Collections
 
+<<<<<<<< HEAD:docs/FrostyMeshTools_Documentation.md
 ---
 
+========
+>>>>>>>> a657b2885a9d79b733aa429c004b76cee6409f1c:README.md
 ## Troubleshooting
 
 | Problem | Solution |
@@ -253,6 +260,7 @@ bone_axis = Y-up
 
 ---
 
+<<<<<<<< HEAD:docs/FrostyMeshTools_Documentation.md
 ## Version History
 
 - **v1.0-beta** - Initial beta release for testing
@@ -265,3 +273,6 @@ bone_axis = Y-up
 ---
 
 **Related Tools:** [Frosty Editor](https://frostyeditor.com/)
+========
+**Related Tools:** [Frosty Editor](https://github.com/CadeEvs/FrostyToolsuite/releases), FrostMeshy, [Blender](https://www.blender.org/)
+>>>>>>>> a657b2885a9d79b733aa429c004b76cee6409f1c:README.md
