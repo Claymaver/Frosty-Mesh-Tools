@@ -4,70 +4,55 @@
 ![Python](https://img.shields.io/badge/Python-FFD43B?style=for-the-badge&logo=python&logoColor=blue)
 [![Status](https://img.shields.io/badge/Build_Status-Beta-red?style=for-the-badge)]()
 
-A Blender addon for generating LOD (Level of Detail) meshes for Frostbite engine modding. Works with mesh.res templates exported from Frosty Editor.
+A Blender addon for generating and exporting LOD (Level of Detail) meshes for **Frostbite engine modding** using Frosty Editor.
 
-> **Tested on:** Blender 4.5 and 5.0  
-> **May work on:** Other versions (untested)
+> Tested on Blender 4.5 & 5.0  
+> Minimum Version: 4.0+
 
 ![Frosty Mesh Tools Panel](images/Preview.png)
 
-## Features
+---
 
-- **Template-Based Workflow** - Load mesh.res files from Frosty Editor to get exact material/LOD structure
-- **Non-Destructive Decimation** - Live decimate modifiers for real-time adjustment
-- **Transform Prep Tools** - One-click Frostbite coordinate system fix
-- **LOD Collections** - Auto-organize meshes into LOD0, LOD1, etc. collections
-- **Configurable Presets** - High Quality, Medium, and Aggressive decimation presets
-- **Preferences System** - Save default paths and settings
+## What It Does
 
-## Requirements
+- Loads `mesh.res` templates from Frosty Editor  
+- Extracts material names and valid LOD ranges  
+- Assigns meshes per material slot  
+- Generates optimized LODs with configurable decimation  
+- Exports FBX files ready for Frosty import  
 
-- Blender 4.5 or newer (tested on 4.5 and 5.0)
-- [Frosty Editor](https://github.com/CadeEvs/FrostyToolsuite/releases) - For exporting mesh.res templates
-
-## Installation
-
-1. Download the latest release (`frosty_mesh_tools.py`)
-2. In Blender: **Edit → Preferences → Add-ons**
-3. Click **Install...** and select the downloaded file
-4. Enable the addon by checking the box
-5. Find the panel in **3D View → Sidebar → Frosty Mesh**
-
-## Quick Start
-
-```
-1. TEMPLATE  →  Load mesh.res from Frosty Editor export
-2. ASSIGN    →  Assign your meshes to material slots
-3. GENERATE  →  Create LODs with decimation
-4. EXPORT    →  FBX at 0.01 scale
-```
-
-## Documentation
-
-- 📖 [Full Documentation](https://github.com/Claymaver/Frosty-Mesh-Tools/wiki) - Complete workflow and reference
-
-## License
-
-**Free for personal and non-commercial use.** See [LICENSE](LICENSE) for full terms.
-
-- ✅ Free to use
-- ✅ Modify for personal use
-- ❌ No selling
-- ❌ No commercial use
-- ❌ No redistributing modified versions
-
-## Credits
-
-**Author:** Clay MacDonald
+No manual LOD setup. No guessing material names.
 
 ---
 
-## Changelog
+## Quick Workflow
 
-### v1.0-beta
-- Initial beta release
-- Template-based LOD generation
-- Non-destructive decimation workflow
-- Transform prep tools for Frostbite
-- LOD collection organization
-- Addon preferences system
+1. Load `mesh.res` template  
+2. Assign meshes to material slots  
+3. Generate LODs  
+4. Export FBX  
+5. Import into Frosty  
+
+---
+
+## Requirements
+
+- Blender 4.0+  
+- Frosty Editor (for exporting `mesh.res` templates)
+
+---
+
+## Installation
+
+1. Download `frosty_mesh_tools.py`  
+2. Blender → Edit → Preferences → Add-ons  
+3. Click **Install…** and select the file  
+4. Enable the addon  
+5. Find it in **3D View → Sidebar → Frosty Mesh**
+
+---
+
+## License
+
+Free for personal and non-commercial use.  
+See [LICENSE](LICENSE) for details.

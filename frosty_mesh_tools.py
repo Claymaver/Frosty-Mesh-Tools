@@ -1,11 +1,11 @@
 bl_info = {
-    "name": "Frosty Mesh Tools (Beta)",
+    "name": "Frosty Mesh Tools",
     "author": "Clay MacDonald",
-    "version": (1, 0, 0),
-    "blender": (4, 5, 0),
+    "version": (3, 0, 1),
+    "blender": (4, 0, 0),
     "location": "View3D > Sidebar > Frosty Mesh",
-    "description": "Generate LODs for Frostbite engine modding using mesh.res templates",
-    "doc_url": "https://github.com/yourusername/frosty-mesh-tools/blob/main/docs/FrostyMeshTools_Documentation.md",
+    "description": "Generate LODs and export FBX meshes for Frostbite engine modding via Frosty Editor",
+    "doc_url": "https://github.com/claymcdonald/frosty-mesh-tools/wiki",
     "category": "Object",
 }
 
@@ -13,7 +13,6 @@ import bpy
 import os
 import re
 import math
-import webbrowser
 from bpy.props import (
     StringProperty, IntProperty, FloatProperty,
     BoolProperty, EnumProperty, CollectionProperty, PointerProperty
@@ -21,275 +20,218 @@ from bpy.props import (
 from bpy.types import Operator, Panel, PropertyGroup, AddonPreferences
 from bpy_extras.io_utils import ImportHelper
 
-
 # ============================================================================
 # CONSTANTS
 # ============================================================================
 
-DOCS_URL = "https://github.com/yourusername/frosty-mesh-tools/blob/main/docs/FrostyMeshTools_Documentation.md"
-DECIMATE_MOD_NAME = "FrostyLOD_Decimate"
-
-
-# ============================================================================
-# ADDON PREFERENCES
-# ============================================================================
-
-class FrostyLODPreferences(AddonPreferences):
-    bl_idname = __name__
-    
-    default_samples_folder: StringProperty(
-        name="Default Samples Folder",
-        description="Default folder containing exported mesh.res templates from Frosty Editor",
-        default="",
-        subtype='DIR_PATH'
-    )
-    
-    default_export_path: StringProperty(
-        name="Default Export Path",
-        description="Default folder for FBX exports",
-        default="//",
-        subtype='DIR_PATH'
-    )
-    
-    default_export_scale: FloatProperty(
-        name="Default Export Scale",
-        description="Default scale for FBX export. Use 0.01 for Frostbite games",
-        default=0.01,
-        min=0.001,
-        max=1000.0
-    )
-    
-    default_preset: EnumProperty(
-        name="Default Preset",
-        description="Default decimation preset for new scenes",
-        items=[
-            ('HIGH', "High Quality", "Conservative decimation, best visual quality"),
-            ('MEDIUM', "Medium", "Balanced decimation"),
-            ('AGGRESSIVE', "Aggressive", "Heavy decimation, smaller file size"),
-            ('CUSTOM', "Custom", "Use custom ratio values"),
-        ],
-        default='HIGH'
-    )
-    
-    default_lod1_ratio: FloatProperty(
-        name="Default LOD1 Ratio",
-        description="Default polygon ratio for LOD1 (0.5 = 50% of original)",
-        default=0.5,
-        min=0.01, max=1.0,
-        subtype='FACTOR'
-    )
-    
-    default_ratio_step: FloatProperty(
-        name="Default Ratio Step",
-        description="How much to reduce each subsequent LOD level",
-        default=0.1,
-        min=0.01, max=0.5,
-        subtype='FACTOR'
-    )
-    
-    default_decimation_method: EnumProperty(
-        name="Default Decimation Method",
-        description="Default algorithm for mesh decimation",
-        items=[
-            ('COLLAPSE', "Collapse", "Edge collapse - best for most meshes"),
-            ('UNSUBDIV', "Un-Subdivide", "Reverse subdivision - good for subdivided meshes"),
-            ('PLANAR', "Planar", "Dissolve flat areas - good for hard surface"),
-        ],
-        default='COLLAPSE'
-    )
-    
-    default_symmetry: EnumProperty(
-        name="Default Symmetry",
-        description="Preserve symmetry during decimation",
-        items=[
-            ('NONE', "None", "No symmetry preservation"),
-            ('X', "X", "Preserve X-axis symmetry"),
-            ('Y', "Y", "Preserve Y-axis symmetry"),
-            ('Z', "Z", "Preserve Z-axis symmetry"),
-        ],
-        default='NONE'
-    )
-    
-    auto_apply_defaults: BoolProperty(
-        name="Auto-Apply Defaults to New Scenes",
-        description="Automatically apply default settings when opening a new file",
-        default=True
-    )
-    
-    remember_last_template: BoolProperty(
-        name="Remember Last Template",
-        description="Remember the last loaded template for quick access",
-        default=True
-    )
-    
-    last_template_path: StringProperty(default="", options={'HIDDEN'})
-    
-    confirm_destructive: BoolProperty(
-        name="Confirm Destructive Actions",
-        description="Ask for confirmation before removing LODs or applying modifiers",
-        default=True
-    )
-    
-    auto_organize_collections: BoolProperty(
-        name="Auto-Organize LODs into Collections",
-        description="Automatically sort generated LODs into collections by level",
-        default=True
-    )
-    
-    show_notifications: BoolProperty(
-        name="Show Success Notifications",
-        description="Show popup notifications after successful operations",
-        default=True
-    )
-    
-    def draw(self, context):
-        layout = self.layout
-        
-        box = layout.box()
-        box.label(text="Default Paths", icon='FILE_FOLDER')
-        box.prop(self, "default_samples_folder")
-        box.prop(self, "default_export_path")
-        
-        box = layout.box()
-        box.label(text="Default Export Settings", icon='EXPORT')
-        box.prop(self, "default_export_scale")
-        
-        box = layout.box()
-        box.label(text="Default Generation Settings", icon='MOD_DECIM')
-        box.prop(self, "default_preset")
-        row = box.row()
-        row.prop(self, "default_lod1_ratio")
-        row.prop(self, "default_ratio_step")
-        row = box.row()
-        row.prop(self, "default_decimation_method")
-        row.prop(self, "default_symmetry")
-        
-        box = layout.box()
-        box.label(text="Behavior", icon='PREFERENCES')
-        box.prop(self, "auto_apply_defaults")
-        box.prop(self, "remember_last_template")
-        box.prop(self, "confirm_destructive")
-        box.prop(self, "auto_organize_collections")
-        box.prop(self, "show_notifications")
-        
-        layout.separator()
-        row = layout.row()
-        row.operator("frosty.apply_defaults_to_scene", icon='IMPORT')
-        row.operator("frosty.reset_preferences", icon='LOOP_BACK')
-
-
-class FROSTY_OT_apply_defaults_to_scene(Operator):
-    bl_idname = "frosty.apply_defaults_to_scene"
-    bl_label = "Apply Defaults to Scene"
-    bl_description = "Apply your saved default settings to the current scene"
-    
-    def execute(self, context):
-        apply_defaults_to_scene(context)
-        self.report({'INFO'}, "Applied default settings")
-        return {'FINISHED'}
-
-
-class FROSTY_OT_reset_preferences(Operator):
-    bl_idname = "frosty.reset_preferences"
-    bl_label = "Reset to Factory Defaults"
-    bl_description = "Reset all preferences to their original values"
-    
-    def invoke(self, context, event):
-        return context.window_manager.invoke_confirm(self, event)
-    
-    def execute(self, context):
-        prefs = get_prefs()
-        prefs.default_samples_folder = ""
-        prefs.default_export_path = "//"
-        prefs.default_export_scale = 0.01
-        prefs.default_preset = 'HIGH'
-        prefs.default_lod1_ratio = 0.5
-        prefs.default_ratio_step = 0.1
-        prefs.default_decimation_method = 'COLLAPSE'
-        prefs.default_symmetry = 'NONE'
-        prefs.auto_apply_defaults = True
-        prefs.remember_last_template = True
-        prefs.confirm_destructive = True
-        prefs.auto_organize_collections = True
-        prefs.show_notifications = True
-        prefs.last_template_path = ""
-        self.report({'INFO'}, "Reset preferences")
-        return {'FINISHED'}
-
-
-def get_prefs():
-    return bpy.context.preferences.addons[__name__].preferences
-
-
-def apply_defaults_to_scene(context):
-    prefs = get_prefs()
-    settings = context.scene.frosty_lod_settings
-    
-    if prefs.default_samples_folder:
-        settings.samples_folder = prefs.default_samples_folder
-    if prefs.default_export_path:
-        settings.export_path = prefs.default_export_path
-    
-    settings.export_scale = prefs.default_export_scale
-    settings.preset = prefs.default_preset
-    settings.lod1_ratio = prefs.default_lod1_ratio
-    settings.ratio_step = prefs.default_ratio_step
-    settings.decimation_method = prefs.default_decimation_method
-    settings.symmetry_axis = prefs.default_symmetry
-
-
-def show_notification(self, message, title="Frosty Mesh Tools", icon='INFO'):
-    """Show a popup notification if enabled"""
-    prefs = get_prefs()
-    if prefs.show_notifications:
-        def draw(self, context):
-            self.layout.label(text=message)
-        bpy.context.window_manager.popup_menu(draw, title=title, icon=icon)
-    self.report({'INFO'}, message)
-
+MANAGED_PROP = "frosty_managed"
+LOD_PROP = "frosty_lod_level"
+MATERIAL_PROP = "frosty_material"
 
 # ============================================================================
-# RES FILE HANDLING
+# TEMPLATE SCANNING (must be before PropertyGroup)
 # ============================================================================
+
+_cached_samples = []
+_cached_folder = ""
+
 
 def is_mesh_res_file(filepath):
-    filename = os.path.basename(filepath).lower()
-    if filename == 'blocks.res':
+    """Check if file is a valid mesh.res (not a cloth asset)"""
+    if not os.path.exists(filepath):
         return False
-    if '_mesh.res' in filename:
-        return True
+    name = os.path.basename(filepath).lower()
+    
+    if name == 'blocks.res':
+        return False
+    if 'clothwrap' in name or 'eacloth' in name:
+        return False
+    if not name.endswith('.res'):
+        return False
+    
     try:
         with open(filepath, 'rb') as f:
-            data = f.read(8192)
-        return 'Mesh:' in data.decode('latin-1', errors='ignore')
+            data = f.read(100)
+        return b'\x00' in data and len(data) >= 50
     except:
         return False
 
 
 def scan_samples_folder(folder_path):
-    templates = []
+    """Scan folder for mesh.res templates (excludes cloth assets)"""
+    samples = []
     if not folder_path or not os.path.exists(folder_path):
-        return templates
+        return samples
     
-    for item in os.listdir(folder_path):
-        item_path = os.path.join(folder_path, item)
-        if os.path.isdir(item_path):
-            for filename in os.listdir(item_path):
-                if filename.endswith('.res') and filename.lower() != 'blocks.res':
-                    filepath = os.path.join(item_path, filename)
-                    if is_mesh_res_file(filepath):
-                        templates.append((item, filepath))
-                        break
+    for root, dirs, files in os.walk(folder_path):
+        for f in files:
+            filepath = os.path.join(root, f)
+            name_lower = f.lower()
+            
+            if not name_lower.endswith('.res'):
+                continue
+            if name_lower == 'blocks.res':
+                continue
+            if 'clothwrap' in name_lower or 'eacloth' in name_lower:
+                continue
+            if 'cloth' in name_lower and 'asset' in name_lower:
+                continue
+            
+            if name_lower.endswith('_mesh.res') or is_mesh_res_file(filepath):
+                rel_path = os.path.relpath(root, folder_path)
+                if rel_path == '.':
+                    display = os.path.splitext(f)[0]
+                else:
+                    display = rel_path.replace(os.sep, ' / ')
+                samples.append((display, filepath))
     
-    return sorted(templates, key=lambda x: x[0].lower())
+    samples.sort(key=lambda x: x[0].lower())
+    return samples
 
+
+def get_sample_items(self, context):
+    global _cached_samples, _cached_folder
+    settings = context.scene.frosty_lod_settings
+    
+    if settings.samples_folder != _cached_folder:
+        _cached_folder = settings.samples_folder
+        _cached_samples = scan_samples_folder(settings.samples_folder)
+    
+    items = [('NONE', "-- Select Template --", "Choose a mesh.res template")]
+    for display_name, filepath in _cached_samples:
+        items.append((filepath, display_name, f"Load: {display_name}"))
+    if len(items) == 1:
+        items.append(('NO_SAMPLES', "(No templates found)", ""))
+    return items
+
+
+def on_sample_selected(self, context):
+    settings = context.scene.frosty_lod_settings
+    if settings.selected_sample not in ('NONE', 'NO_SAMPLES', ''):
+        if os.path.exists(settings.selected_sample):
+            load_template(context, settings.selected_sample)
+
+
+def on_samples_folder_changed(self, context):
+    global _cached_folder
+    _cached_folder = ""
+
+
+def on_preset_changed(self, context):
+    settings = context.scene.frosty_lod_settings
+    presets = {'HIGH': (0.50, 0.10), 'MEDIUM': (0.50, 0.12), 'AGGRESSIVE': (0.40, 0.10)}
+    if settings.preset in presets:
+        settings.lod1_ratio, settings.ratio_step = presets[settings.preset]
+
+# ============================================================================
+# PROPERTY GROUPS
+# ============================================================================
+
+class MaterialSlotItem(PropertyGroup):
+    name: StringProperty(name="Material Name")
+    enabled: BoolProperty(name="Enabled", default=True)
+    mesh_object: PointerProperty(name="Mesh", type=bpy.types.Object)
+    min_lod: IntProperty(name="Min LOD", default=0, min=0, max=7)
+    max_lod: IntProperty(name="Max LOD", default=4, min=0, max=7)
+
+
+class FrostyLODSettings(PropertyGroup):
+    # Template settings
+    template_path: StringProperty(name="Template Path", subtype='FILE_PATH')
+    template_name: StringProperty(name="Template Name", default="")
+    template_mesh_path: StringProperty(name="Mesh Path", default="")
+    samples_folder: StringProperty(
+        name="Templates Folder",
+        subtype='DIR_PATH',
+        update=lambda s, c: on_samples_folder_changed(s, c)
+    )
+    selected_sample: EnumProperty(
+        name="Template",
+        items=get_sample_items,
+        update=lambda s, c: on_sample_selected(s, c)
+    )
+    
+    # Material slots
+    material_slots: CollectionProperty(type=MaterialSlotItem)
+    active_slot_index: IntProperty()
+    
+    # LOD settings
+    lod_count: IntProperty(name="LOD Count", default=4, min=1, max=8)
+    lod1_ratio: FloatProperty(name="LOD1 Ratio", default=0.5, min=0.01, max=1.0)
+    ratio_step: FloatProperty(name="Step", default=0.1, min=0.01, max=0.5)
+    preset: EnumProperty(
+        name="Quality Preset",
+        items=[
+            ('HIGH', "High Quality", "Less aggressive decimation"),
+            ('MEDIUM', "Medium", "Balanced decimation"),
+            ('AGGRESSIVE', "Aggressive", "More aggressive decimation"),
+        ],
+        default='MEDIUM',
+        update=lambda s, c: on_preset_changed(s, c)
+    )
+    
+    # Export settings
+    export_path: StringProperty(name="Export Path", subtype='DIR_PATH', default="//")
+    export_name: StringProperty(name="Export Name", default="mesh")
+    export_scale: FloatProperty(name="Scale", default=1.0, min=0.001, max=100.0)
+    export_filter: EnumProperty(
+        name="Export Filter",
+        items=[
+            ('SLOTS', "Assigned Meshes", "Export meshes assigned to material slots"),
+            ('VISIBLE', "Visible LODs", "Export all visible LOD meshes"),
+            ('SELECTED', "Selected", "Export selected LOD meshes"),
+            ('ALL', "All LODs", "Export all generated LOD meshes"),
+        ],
+        default='SLOTS'
+    )
+    
+    # UI state
+    active_tab: EnumProperty(
+        name="Tab",
+        items=[
+            ('TEMPLATE', "Template", "Template loading"),
+            ('LODS', "LODs", "LOD generation"),
+            ('EXPORT', "Export", "FBX export"),
+            ('SETTINGS', "Settings", "Addon settings"),
+        ],
+        default='TEMPLATE'
+    )
+    
+    # Misc
+    auto_rename_meshes: BoolProperty(
+        name="Auto-rename on assign",
+        description="Rename meshes to materialname:lod0 format when assigned",
+        default=True
+    )
+
+
+class FrostyPreferences(AddonPreferences):
+    bl_idname = __name__
+    
+    remember_last_template: BoolProperty(
+        name="Remember Last Template",
+        description="Auto-load last used template on startup",
+        default=True
+    )
+    last_template_path: StringProperty(name="Last Template", subtype='FILE_PATH')
+    
+    def draw(self, context):
+        layout = self.layout
+        layout.prop(self, "remember_last_template")
+
+
+# ============================================================================
+# TEMPLATE LOADING
+# ============================================================================
 
 def parse_mesh_res(filepath):
+    """Extract material names and LOD info from mesh.res"""
     with open(filepath, 'rb') as f:
         data = f.read()
 
     text = data.decode('latin-1', errors='ignore')
 
+    # Extract mesh path
     mesh_path_match = re.search(
         r'(?:characters|vehicles|weapons|props)/[^\x00]+?(?=_lod|\x00)',
         text
@@ -297,31 +239,58 @@ def parse_mesh_res(filepath):
     mesh_path = mesh_path_match.group(0) if mesh_path_match else ""
 
     lod_sections = {}
-
-    for match in re.finditer(r'([A-Za-z0-9_]+)\x00', text):
-        mat_name = match.group(1)
-
-        if len(mat_name) < 3:
-            continue
-        if mat_name.isdigit():
-            continue
-        if re.search(r'_lod\d+$', mat_name, re.IGNORECASE):
-            continue
-        if mat_name.lower() in {"mesh", "material", "shader", "lod", "model"}:
-            continue
-
-        pos = match.start()
-        forward_text = text[pos:pos + 300]
-
-        lod_match = re.search(r'Mesh:[^\x00]+_lod(\d+)', forward_text)
-        if not lod_match:
-            continue
-
+    
+    # Strategy 1: Find "Mesh:path_lodN" patterns and extract nearby material names
+    for lod_match in re.finditer(r'Mesh:[^\x00]+?_lod(\d+)', text):
         lod_num = int(lod_match.group(1))
+        pos = lod_match.start()
+        
+        # Look backwards for material name (within 300 chars before)
+        backward_text = text[max(0, pos - 300):pos]
+        
+        # Find null-terminated strings that look like material names
+        for mat_match in re.finditer(r'([A-Za-z][A-Za-z0-9_]{2,})\x00', backward_text):
+            mat_name = mat_match.group(1)
+            
+            # Skip common non-material names
+            if mat_name.lower() in {"mesh", "material", "shader", "lod", "model", "section", "bone", "vertex"}:
+                continue
+            if re.search(r'_lod\d+$', mat_name, re.IGNORECASE):
+                continue
+            if mat_name.isdigit():
+                continue
+                
+            lod_sections.setdefault(lod_num, [])
+            if mat_name not in lod_sections[lod_num]:
+                lod_sections[lod_num].append(mat_name)
+    
+    # Strategy 2: If no materials found, try forward search from material candidates
+    if not lod_sections:
+        for match in re.finditer(r'([A-Za-z0-9_]+)\x00', text):
+            mat_name = match.group(1)
 
-        lod_sections.setdefault(lod_num, [])
-        if mat_name not in lod_sections[lod_num]:
-            lod_sections[lod_num].append(mat_name)
+            if len(mat_name) < 3 or mat_name.isdigit():
+                continue
+            if re.search(r'_lod\d+$', mat_name, re.IGNORECASE):
+                continue
+            if mat_name.lower() in {"mesh", "material", "shader", "lod", "model"}:
+                continue
+
+            pos = match.start()
+            forward_text = text[pos:pos + 300]
+
+            lod_match = re.search(r'Mesh:[^\x00]+_lod(\d+)', forward_text)
+            if not lod_match:
+                # Also try _LOD pattern
+                lod_match = re.search(r'_[Ll][Oo][Dd](\d+)', forward_text)
+            if not lod_match:
+                continue
+
+            lod_num = int(lod_match.group(1))
+
+            lod_sections.setdefault(lod_num, [])
+            if mat_name not in lod_sections[lod_num]:
+                lod_sections[lod_num].append(mat_name)
 
     material_info = {}
     all_materials = set()
@@ -330,22 +299,37 @@ def parse_mesh_res(filepath):
         all_materials.update(materials)
 
     for mat in all_materials:
-        lods_with_mat = [
-            lod for lod, mats in lod_sections.items() if mat in mats
-        ]
+        lods_with_mat = [lod for lod, mats in lod_sections.items() if mat in mats]
         if lods_with_mat:
             material_info[mat] = (min(lods_with_mat), max(lods_with_mat))
+
+    # Debug output
+    if material_info:
+        print(f"[FrostyMeshTools] Found {len(material_info)} materials:")
+        for mat, (min_l, max_l) in sorted(material_info.items()):
+            print(f"  {mat}: LOD {min_l}-{max_l}")
+    else:
+        print(f"[FrostyMeshTools] Warning: No materials with LOD info found in {filepath}")
+        # Fallback: extract any plausible material names
+        fallback_mats = set()
+        for match in re.finditer(r'([A-Za-z][A-Za-z0-9_]{3,30})\x00', text):
+            name = match.group(1)
+            if name.lower() not in {"mesh", "material", "shader", "lod", "model", "section", "bone", "vertex", "index", "buffer", "texture", "normal", "tangent"}:
+                if not re.search(r'_lod\d+$|^lod\d+$', name, re.IGNORECASE):
+                    fallback_mats.add(name)
+        
+        if fallback_mats:
+            print(f"[FrostyMeshTools] Using fallback - found {len(fallback_mats)} potential materials")
+            for mat in sorted(fallback_mats)[:20]:  # Limit to first 20
+                material_info[mat] = (0, 4)  # Default LOD range
 
     return material_info, lod_sections, mesh_path
 
 
-# ============================================================================
-# TEMPLATE LOADING
-# ============================================================================
-
 def load_template(context, filepath):
+    """Load a mesh.res template"""
     settings = context.scene.frosty_lod_settings
-    prefs = get_prefs()
+    prefs = context.preferences.addons[__name__].preferences
     
     if not is_mesh_res_file(filepath):
         return False, "Not a valid mesh.res file"
@@ -375,674 +359,210 @@ def load_template(context, filepath):
         slot.max_lod = max_lod
         slot.enabled = True
     
-    print(f"\n{'='*50}\nLOADED: {settings.template_name}\n{'='*50}")
-    for mat in sorted(material_info.keys()):
-        min_l, max_l = material_info[mat]
-        print(f"  {mat}: LOD {min_l}-{max_l}")
-    print('='*50 + "\n")
-    
+    print(f"Loaded template: {settings.template_name} ({len(material_info)} materials)")
     return True, f"Loaded {len(material_info)} materials"
-
-
-# ============================================================================
-# SAMPLES DROPDOWN
-# ============================================================================
-
-_cached_samples = []
-_cached_folder = ""
-
-def get_sample_items(self, context):
-    global _cached_samples, _cached_folder
-    settings = context.scene.frosty_lod_settings
-    
-    if settings.samples_folder != _cached_folder:
-        _cached_folder = settings.samples_folder
-        _cached_samples = scan_samples_folder(settings.samples_folder)
-    
-    items = [('NONE', "-- Select Template --", "Choose a mesh.res template to load")]
-    for display_name, filepath in _cached_samples:
-        items.append((filepath, display_name, f"Load template: {display_name}"))
-    if len(items) == 1:
-        items.append(('NO_SAMPLES', "(No templates found)", "No valid mesh.res files found in samples folder"))
-    return items
-
-
-def on_sample_selected(self, context):
-    settings = context.scene.frosty_lod_settings
-    if settings.selected_sample not in ('NONE', 'NO_SAMPLES', ''):
-        if os.path.exists(settings.selected_sample):
-            load_template(context, settings.selected_sample)
-
-
-def on_samples_folder_changed(self, context):
-    global _cached_folder
-    _cached_folder = ""
-
-
-def on_preset_changed(self, context):
-    settings = context.scene.frosty_lod_settings
-    presets = {'HIGH': (0.50, 0.10), 'MEDIUM': (0.50, 0.12), 'AGGRESSIVE': (0.40, 0.10)}
-    if settings.preset in presets:
-        settings.lod1_ratio, settings.ratio_step = presets[settings.preset]
-
-
-# ============================================================================
-# PROPERTY GROUPS
-# ============================================================================
-
-class FrostyMaterialSlot(PropertyGroup):
-    name: StringProperty(name="Material Name")
-    min_lod: IntProperty(name="Min LOD", default=0)
-    max_lod: IntProperty(name="Max LOD", default=5)
-    source_object: PointerProperty(
-        name="Source Mesh", 
-        type=bpy.types.Object,
-        description="The mesh to use for this material slot",
-        poll=lambda self, obj: obj.type == 'MESH'
-    )
-    enabled: BoolProperty(
-        name="Enabled", 
-        default=True,
-        description="Include this material in LOD generation"
-    )
-
-
-class FrostyLODSettings(PropertyGroup):
-    
-    ui_tab: EnumProperty(
-        name="Tab",
-        items=[
-            ('TEMPLATE', "Template", "Load mesh.res template from Frosty Editor"),
-            ('ASSIGN', "Assign", "Assign your meshes to template material slots"),
-            ('GENERATE', "Generate", "Configure and generate LOD meshes"),
-            ('EXPORT', "Export", "Export LODs as FBX for game import"),
-            ('TOOLS', "Tools", "Mesh preparation and utility tools"),
-        ],
-        default='TEMPLATE'
-    )
-
-    samples_folder: StringProperty(
-        name="Samples Folder",
-        description="Folder containing exported mesh.res templates (organized in subfolders)",
-        default="", 
-        subtype='DIR_PATH',
-        update=on_samples_folder_changed
-    )
-    selected_sample: EnumProperty(
-        name="Template", 
-        description="Select a template from your samples folder",
-        items=get_sample_items, 
-        update=on_sample_selected
-    )
-
-    template_path: StringProperty(default="")
-    template_mesh_path: StringProperty(default="")
-    template_name: StringProperty(default="")
-
-    material_slots: CollectionProperty(type=FrostyMaterialSlot)
-    active_material_index: IntProperty(default=0)
-
-    lod1_ratio: FloatProperty(
-        name="LOD1 Ratio", 
-        description="Polygon ratio for LOD1. Lower = fewer polygons (0.5 = 50%)",
-        default=0.5, 
-        min=0.01, 
-        max=1.0, 
-        subtype='FACTOR'
-    )
-    ratio_step: FloatProperty(
-        name="Ratio Step", 
-        description="How much to reduce each subsequent LOD (0.1 = 10% less each level)",
-        default=0.1, 
-        min=0.01, 
-        max=0.5, 
-        subtype='FACTOR'
-    )
-
-    preset: EnumProperty(
-        name="Preset",
-        description="Quick decimation presets",
-        items=[
-            ('CUSTOM', "Custom", "Use custom ratio values below"),
-            ('HIGH', "High Quality", "50% LOD1, 10% step - Best visual quality"),
-            ('MEDIUM', "Medium", "50% LOD1, 12% step - Balanced"),
-            ('AGGRESSIVE', "Aggressive", "40% LOD1, 10% step - Smaller file size"),
-        ],
-        default='HIGH',
-        update=on_preset_changed
-    )
-
-    decimation_method: EnumProperty(
-        name="Method",
-        description="Algorithm used for mesh decimation",
-        items=[
-            ('COLLAPSE', "Collapse", "Edge collapse - Best for organic and most meshes"),
-            ('UNSUBDIV', "Un-Subdivide", "Reverse subdivision - Good for cleanly subdivided meshes"),
-            ('PLANAR', "Planar", "Dissolve flat regions - Good for hard surface models"),
-        ],
-        default='COLLAPSE'
-    )
-
-    symmetry_axis: EnumProperty(
-        name="Symmetry",
-        description="Preserve symmetry during decimation (for symmetric models)",
-        items=[
-            ('NONE', "None", "No symmetry preservation"),
-            ('X', "X", "Preserve X-axis symmetry"),
-            ('Y', "Y", "Preserve Y-axis symmetry"),
-            ('Z', "Z", "Preserve Z-axis symmetry"),
-        ],
-        default='NONE'
-    )
-    
-    show_advanced: BoolProperty(
-        name="Show Advanced",
-        description="Show advanced decimation settings",
-        default=False
-    )
-
-    export_path: StringProperty(
-        name="Export Path", 
-        description="Folder to save exported FBX files",
-        default="//", 
-        subtype='DIR_PATH'
-    )
-    export_name: StringProperty(
-        name="Export Name", 
-        description="Filename for the exported FBX (without extension)",
-        default="mesh_export"
-    )
-    export_scale: FloatProperty(
-        name="Scale", 
-        description="Export scale. Use 0.01 for Frostbite games",
-        default=0.01, 
-        min=0.001, 
-        max=1000.0
-    )
 
 
 # ============================================================================
 # UTILITY FUNCTIONS
 # ============================================================================
 
-def calculate_ratio_for_lod(settings, lod_level):
-    if lod_level == 0:
-        return 1.0
-    ratio = settings.lod1_ratio - (settings.ratio_step * (lod_level - 1))
-    return max(ratio, 0.01)
-
-
-def get_lod_level_from_name(name):
-    match = re.search(r':lod(\d+)$', name.lower())
-    return int(match.group(1)) if match else -1
-
-
 def find_armature(obj):
+    """Find armature for an object"""
+    if obj.parent and obj.parent.type == 'ARMATURE':
+        return obj.parent
     for mod in obj.modifiers:
         if mod.type == 'ARMATURE' and mod.object:
             return mod.object
-    if obj.parent and obj.parent.type == 'ARMATURE':
-        return obj.parent
     return None
 
 
-def get_generated_lods():
-    return [obj for obj in bpy.data.objects if obj.type == 'MESH' and ':lod' in obj.name.lower()]
-
-
-def get_lods_with_modifiers():
-    lods = []
-    for obj in get_generated_lods():
-        if DECIMATE_MOD_NAME in obj.modifiers:
-            lods.append(obj)
-    return lods
-
-
-def get_slot_status(settings):
-    enabled_slots = [s for s in settings.material_slots if s.enabled]
-    assigned = sum(1 for s in enabled_slots if s.source_object and is_valid(s.source_object))
-    return assigned, len(enabled_slots) - assigned, len(enabled_slots)
-
-
-def is_valid(obj):
-    if obj is None:
-        return False
-    try:
-        _ = obj.name
-        return True
-    except ReferenceError:
-        return False
-
-
-def get_or_create_collection(name, parent=None):
-    if name in bpy.data.collections:
-        return bpy.data.collections[name]
+def get_generated_lods(filter_mode='SLOTS'):
+    """Get all generated LOD meshes based on filter mode"""
+    settings = bpy.context.scene.frosty_lod_settings
     
-    coll = bpy.data.collections.new(name)
-    if parent:
-        parent.children.link(coll)
-    else:
-        bpy.context.scene.collection.children.link(coll)
-    return coll
-
-
-def organize_lods_into_collections():
-    lods = get_generated_lods()
-    if not lods:
-        return 0
+    valid_mat_names = {slot.name.lower() for slot in settings.material_slots if slot.enabled}
     
-    parent_coll = get_or_create_collection("LODs")
-    
-    lod_collections = {}
-    for i in range(7):
-        lod_collections[i] = get_or_create_collection(f"LOD{i}", parent_coll)
-    
-    moved = 0
-    for obj in lods:
-        lod_level = get_lod_level_from_name(obj.name)
-        if lod_level < 0 or lod_level > 6:
+    lod_objects = []
+    for obj in bpy.data.objects:
+        if obj.type != 'MESH':
             continue
         
-        target_coll = lod_collections[lod_level]
-        
-        for coll in obj.users_collection:
-            coll.objects.unlink(obj)
-        
-        target_coll.objects.link(obj)
-        moved += 1
-    
-    return moved
-
-
-def get_poly_counts_by_lod():
-    counts = {}
-    for obj in get_generated_lods():
-        lod_level = get_lod_level_from_name(obj.name)
-        if lod_level < 0:
+        if not obj.get(MANAGED_PROP, False):
             continue
         
-        if DECIMATE_MOD_NAME in obj.modifiers:
-            mod = obj.modifiers[DECIMATE_MOD_NAME]
-            face_count = int(len(obj.data.polygons) * mod.ratio)
-        else:
-            face_count = len(obj.data.polygons)
+        name_lower = obj.name.lower()
         
-        counts[lod_level] = counts.get(lod_level, 0) + face_count
+        if filter_mode == 'SLOTS':
+            mat_part = name_lower.split(':')[0] if ':' in name_lower else name_lower
+            if mat_part not in valid_mat_names:
+                continue
+        elif filter_mode == 'VISIBLE':
+            if not obj.visible_get():
+                continue
+        elif filter_mode == 'SELECTED':
+            if not obj.select_get():
+                continue
+        
+        lod_objects.append(obj)
     
-    return counts
-
-
-def get_mesh_poly_count(obj):
-    """Get polygon count for a mesh object"""
-    if obj and obj.type == 'MESH' and obj.data:
-        return len(obj.data.polygons)
-    return 0
-
-
-def get_validation_status(settings):
-    """Get validation status for generation readiness"""
-    issues = []
-    warnings = []
-    ready = []
-    
-    # Check template
-    if not settings.template_path:
-        issues.append("No template loaded")
-    else:
-        ready.append(f"Template: {settings.template_name}")
-    
-    # Check assignments
-    assigned, unassigned, total = get_slot_status(settings)
-    if assigned == 0:
-        issues.append("No meshes assigned")
-    elif unassigned > 0:
-        warnings.append(f"{unassigned} slot(s) not assigned")
-        ready.append(f"{assigned} mesh(es) assigned")
-    else:
-        ready.append(f"All {total} slots assigned")
-    
-    # Check for existing LODs
-    existing_lods = get_generated_lods()
-    if existing_lods:
-        warnings.append(f"{len(existing_lods)} existing LODs will be replaced")
-    
-    return issues, warnings, ready
+    return lod_objects
 
 
 # ============================================================================
 # OPERATORS
 # ============================================================================
 
-class FROSTY_OT_open_docs(Operator):
-    bl_idname = "frosty.open_docs"
-    bl_label = "Open Documentation"
-    bl_description = "Open the online documentation in your web browser"
-    
-    def execute(self, context):
-        webbrowser.open(DOCS_URL)
-        return {'FINISHED'}
-
-
-class FROSTY_OT_refresh_samples(Operator):
-    bl_idname = "frosty.refresh_samples"
-    bl_label = "Refresh"
-    bl_description = "Rescan the samples folder for templates"
-    
-    def execute(self, context):
-        global _cached_folder
-        _cached_folder = ""
-        self.report({'INFO'}, "Refreshed samples list")
-        return {'FINISHED'}
-
-
 class FROSTY_OT_load_template(Operator, ImportHelper):
     bl_idname = "frosty.load_template"
-    bl_label = "Browse..."
-    bl_description = "Browse for a mesh.res template file exported from Frosty Editor"
+    bl_label = "Load Template"
+    bl_description = "Load a mesh.res template file"
+    
+    filename_ext = ".res"
     filter_glob: StringProperty(default="*_mesh.res;*.res", options={'HIDDEN'})
     
     def execute(self, context):
-        if os.path.basename(self.filepath).lower() == 'blocks.res':
-            self.report({'ERROR'}, "Select *_mesh.res, not blocks.res")
+        success, message = load_template(context, self.filepath)
+        self.report({'INFO' if success else 'ERROR'}, message)
+        return {'FINISHED'} if success else {'CANCELLED'}
+
+
+class FROSTY_OT_assign_mesh(Operator):
+    bl_idname = "frosty.assign_mesh"
+    bl_label = "Assign Mesh"
+    bl_description = "Assign selected mesh to this material slot"
+    bl_options = {'REGISTER', 'UNDO'}
+    
+    slot_index: IntProperty()
+    
+    def execute(self, context):
+        settings = context.scene.frosty_lod_settings
+        
+        if self.slot_index >= len(settings.material_slots):
+            self.report({'ERROR'}, "Invalid slot index")
             return {'CANCELLED'}
-        success, msg = load_template(context, self.filepath)
-        if success:
-            show_notification(self, msg, icon='CHECKMARK')
-        else:
-            self.report({'ERROR'}, msg)
-        return {'FINISHED'} if success else {'CANCELLED'}
-
-
-class FROSTY_OT_load_last_template(Operator):
-    bl_idname = "frosty.load_last_template"
-    bl_label = "Load Last Template"
-    bl_description = "Quickly reload the last used template"
-    
-    @classmethod
-    def poll(cls, context):
-        prefs = get_prefs()
-        return prefs.last_template_path and os.path.exists(prefs.last_template_path)
-    
-    def execute(self, context):
-        prefs = get_prefs()
-        success, msg = load_template(context, prefs.last_template_path)
-        if success:
-            show_notification(self, msg, icon='CHECKMARK')
-        else:
-            self.report({'ERROR'}, msg)
-        return {'FINISHED'} if success else {'CANCELLED'}
-
-
-class FROSTY_OT_assign_selected(Operator):
-    bl_idname = "frosty.assign_selected"
-    bl_label = "Assign Selected"
-    bl_description = "Assign the currently selected mesh to this material slot"
-    bl_options = {'REGISTER', 'UNDO'}
-
-    @classmethod
-    def poll(cls, context):
-        settings = context.scene.frosty_lod_settings
-        return settings.material_slots and context.active_object and context.active_object.type == 'MESH'
-
-    def execute(self, context):
-        settings = context.scene.frosty_lod_settings
-        if settings.active_material_index < len(settings.material_slots):
-            slot = settings.material_slots[settings.active_material_index]
-            slot.source_object = context.active_object
-            self.report({'INFO'}, f"Assigned '{context.active_object.name}' → {slot.name}")
-        return {'FINISHED'}
-
-
-class FROSTY_OT_clear_assignment(Operator):
-    bl_idname = "frosty.clear_assignment"
-    bl_label = "Clear"
-    bl_description = "Remove the mesh assignment from this slot"
-    bl_options = {'REGISTER', 'UNDO'}
-
-    def execute(self, context):
-        settings = context.scene.frosty_lod_settings
-        if settings.active_material_index < len(settings.material_slots):
-            settings.material_slots[settings.active_material_index].source_object = None
-            self.report({'INFO'}, "Cleared assignment")
+        
+        slot = settings.material_slots[self.slot_index]
+        
+        obj = context.active_object
+        if not obj or obj.type != 'MESH':
+            self.report({'ERROR'}, "Select a mesh object first")
+            return {'CANCELLED'}
+        
+        # Assign mesh
+        slot.mesh_object = obj
+        obj[MANAGED_PROP] = True
+        obj[LOD_PROP] = 0
+        obj[MATERIAL_PROP] = slot.name
+        
+        # Auto-rename
+        if settings.auto_rename_meshes:
+            obj.name = f"{slot.name}:lod0"
+        
+        self.report({'INFO'}, f"Assigned '{obj.name}' to slot '{slot.name}'")
         return {'FINISHED'}
 
 
 class FROSTY_OT_generate_lods(Operator):
     bl_idname = "frosty.generate_lods"
     bl_label = "Generate LODs"
-    bl_description = "Generate all LOD meshes based on current settings"
+    bl_description = "Generate LOD meshes for all assigned meshes"
     bl_options = {'REGISTER', 'UNDO'}
-
-    @classmethod
-    def poll(cls, context):
-        settings = context.scene.frosty_lod_settings
-        assigned, _, _ = get_slot_status(settings)
-        return assigned > 0
-
-    def invoke(self, context, event):
-        settings = context.scene.frosty_lod_settings
-        assigned, unassigned, total = get_slot_status(settings)
-        
-        if assigned == 0:
-            self.report({'ERROR'}, "No meshes assigned")
-            return {'CANCELLED'}
-        
-        if unassigned > 0:
-            return context.window_manager.invoke_props_dialog(self, width=300)
-        
-        return self.execute(context)
     
-    def draw(self, context):
-        layout = self.layout
-        settings = context.scene.frosty_lod_settings
-        assigned, unassigned, total = get_slot_status(settings)
-        layout.label(text=f"Warning: {unassigned} slot(s) not assigned!", icon='ERROR')
-        layout.label(text="Empty slots will be skipped. Continue?")
-
     def execute(self, context):
         settings = context.scene.frosty_lod_settings
-        prefs = get_prefs()
-        total_created = 0
-        renamed_sources = 0
         
-        generation_tasks = []
+        generated_count = 0
+        
         for slot in settings.material_slots:
-            if not slot.enabled or not slot.source_object or not is_valid(slot.source_object):
-                continue
-            generation_tasks.append({
-                'source_obj': slot.source_object,
-                'mat_name': slot.name,
-                'min_lod': slot.min_lod,
-                'max_lod': slot.max_lod,
-            })
-        
-        if not generation_tasks:
-            self.report({'ERROR'}, "No valid source meshes")
-            return {'CANCELLED'}
-        
-        source_objects = {id(t['source_obj']) for t in generation_tasks}
-        
-        for obj in list(bpy.data.objects):
-            if ':lod' in obj.name.lower() and obj.type == 'MESH':
-                if id(obj) not in source_objects:
-                    if not obj.name.lower().endswith(':lod0'):
-                        mesh = obj.data
-                        bpy.data.objects.remove(obj, do_unlink=True)
-                        if mesh and mesh.users == 0:
-                            bpy.data.meshes.remove(mesh)
-        
-        for task in generation_tasks:
-            source_obj = task['source_obj']
-            if not is_valid(source_obj):
+            if not slot.enabled or not slot.mesh_object:
                 continue
             
-            mat_name = task['mat_name']
-            min_lod = task['min_lod']
-            max_lod = task['max_lod']
+            base_obj = slot.mesh_object
             
-            if min_lod == 0:
-                lod0_name = f"{mat_name}:lod0"
-                source_obj.name = lod0_name
-                source_obj.data.name = lod0_name
-                total_created += 1
-                renamed_sources += 1
-            
-            for lod_level in range(max(1, min_lod), max_lod + 1):
-                lod_name = f"{mat_name}:lod{lod_level}"
+            for lod_level in range(1, settings.lod_count):
+                if lod_level < slot.min_lod or lod_level > slot.max_lod:
+                    continue
                 
-                bpy.ops.object.select_all(action='DESELECT')
-                source_obj.select_set(True)
-                context.view_layer.objects.active = source_obj
-                bpy.ops.object.duplicate()
-
-                lod_obj = context.active_object
-                lod_obj.name = lod_name
-                lod_obj.data = lod_obj.data.copy()
-                lod_obj.data.name = lod_name
-
-                ratio = calculate_ratio_for_lod(settings, lod_level)
+                # Calculate decimation ratio
+                ratio = settings.lod1_ratio
+                for _ in range(lod_level - 1):
+                    ratio -= settings.ratio_step
+                ratio = max(0.01, ratio)
                 
-                decimate = lod_obj.modifiers.new(name=DECIMATE_MOD_NAME, type='DECIMATE')
-                decimate.decimate_type = settings.decimation_method
-                decimate.ratio = ratio
-
-                if settings.decimation_method == 'COLLAPSE':
-                    decimate.use_collapse_triangulate = True
-                    if settings.symmetry_axis != 'NONE':
-                        decimate.use_symmetry = True
-                        decimate.symmetry_axis = settings.symmetry_axis
-
-                total_created += 1
-
-        bpy.ops.object.select_all(action='DESELECT')
-        for obj in get_generated_lods():
-            obj.select_set(True)
-
-        if prefs.auto_organize_collections:
-            organize_lods_into_collections()
-
-        show_notification(self, f"Generated {total_created} LODs successfully!", icon='CHECKMARK')
-        return {'FINISHED'}
-
-
-class FROSTY_OT_update_ratios(Operator):
-    bl_idname = "frosty.update_ratios"
-    bl_label = "Update Ratios"
-    bl_description = "Update decimation ratios on existing LODs without regenerating"
-    bl_options = {'REGISTER', 'UNDO'}
-
-    @classmethod
-    def poll(cls, context):
-        return len(get_lods_with_modifiers()) > 0
-
-    def execute(self, context):
-        settings = context.scene.frosty_lod_settings
-        updated = 0
-        
-        for obj in get_generated_lods():
-            lod_level = get_lod_level_from_name(obj.name)
-            if lod_level <= 0:
-                continue
-            
-            mod = obj.modifiers.get(DECIMATE_MOD_NAME)
-            if mod and mod.type == 'DECIMATE':
-                new_ratio = calculate_ratio_for_lod(settings, lod_level)
-                mod.ratio = new_ratio
-                mod.decimate_type = settings.decimation_method
+                # Create LOD copy
+                new_mesh = base_obj.data.copy()
+                new_obj = base_obj.copy()
+                new_obj.data = new_mesh
+                new_obj.name = f"{slot.name}:lod{lod_level}"
                 
-                if settings.decimation_method == 'COLLAPSE':
-                    mod.use_collapse_triangulate = True
-                    if settings.symmetry_axis != 'NONE':
-                        mod.use_symmetry = True
-                        mod.symmetry_axis = settings.symmetry_axis
-                    else:
-                        mod.use_symmetry = False
+                # Link to collection
+                context.collection.objects.link(new_obj)
                 
-                updated += 1
-        
-        self.report({'INFO'}, f"Updated {updated} modifiers")
-        return {'FINISHED'}
-
-
-class FROSTY_OT_apply_modifiers(Operator):
-    bl_idname = "frosty.apply_modifiers"
-    bl_label = "Apply All Modifiers"
-    bl_description = "Permanently apply decimation modifiers to all LODs (cannot be undone)"
-    bl_options = {'REGISTER', 'UNDO'}
-
-    @classmethod
-    def poll(cls, context):
-        return len(get_lods_with_modifiers()) > 0
-
-    def invoke(self, context, event):
-        prefs = get_prefs()
-        if prefs.confirm_destructive:
-            return context.window_manager.invoke_confirm(self, event)
-        return self.execute(context)
-
-    def execute(self, context):
-        applied = 0
-        
-        for obj in get_generated_lods():
-            mod = obj.modifiers.get(DECIMATE_MOD_NAME)
-            if mod:
-                context.view_layer.objects.active = obj
+                # Apply decimate modifier
+                context.view_layer.objects.active = new_obj
+                mod = new_obj.modifiers.new(name="Decimate", type='DECIMATE')
+                mod.ratio = ratio
                 bpy.ops.object.modifier_apply(modifier=mod.name)
-                applied += 1
+                
+                # Mark as managed
+                new_obj[MANAGED_PROP] = True
+                new_obj[LOD_PROP] = lod_level
+                new_obj[MATERIAL_PROP] = slot.name
+                
+                generated_count += 1
         
-        show_notification(self, f"Applied {applied} modifiers", icon='CHECKMARK')
-        return {'FINISHED'}
-
-
-class FROSTY_OT_organize_collections(Operator):
-    bl_idname = "frosty.organize_collections"
-    bl_label = "Organize into Collections"
-    bl_description = "Sort all LOD meshes into collections by LOD level (LOD0, LOD1, etc.)"
-    bl_options = {'REGISTER', 'UNDO'}
-
-    @classmethod
-    def poll(cls, context):
-        return len(get_generated_lods()) > 0
-
-    def execute(self, context):
-        moved = organize_lods_into_collections()
-        self.report({'INFO'}, f"Organized {moved} LODs into collections")
+        self.report({'INFO'}, f"Generated {generated_count} LOD meshes")
         return {'FINISHED'}
 
 
 class FROSTY_OT_export_fbx(Operator):
     bl_idname = "frosty.export_fbx"
     bl_label = "Export FBX"
-    bl_description = "Export all LOD meshes and armatures to an FBX file"
-
+    bl_description = "Export meshes to FBX for import into Frosty Editor"
+    
     @classmethod
     def poll(cls, context):
-        return len(get_generated_lods()) > 0
-
+        settings = context.scene.frosty_lod_settings
+        filter_mode = getattr(settings, 'export_filter', 'SLOTS')
+        return len(get_generated_lods(filter_mode)) > 0
+    
     def execute(self, context):
         settings = context.scene.frosty_lod_settings
-        lod_objects = get_generated_lods()
-
+        filter_mode = getattr(settings, 'export_filter', 'SLOTS')
+        lod_objects = get_generated_lods(filter_mode)
+        
+        view_layer_objects = set(context.view_layer.objects)
+        lod_objects = [obj for obj in lod_objects if obj in view_layer_objects]
+        
+        if not lod_objects:
+            self.report({'ERROR'}, "No LOD objects to export")
+            return {'CANCELLED'}
+        
+        # Find armatures
         armatures = set()
         for obj in lod_objects:
             arm = find_armature(obj)
-            if arm and not arm.hide_viewport:
+            if arm and arm in view_layer_objects:
                 armatures.add(arm)
-
+        
+        # Select objects for export
         bpy.ops.object.select_all(action='DESELECT')
         for obj in lod_objects:
             obj.select_set(True)
         for arm in armatures:
             arm.select_set(True)
-
+        
         if lod_objects:
             context.view_layer.objects.active = lod_objects[0]
-
+        
+        # Create export directory
         export_dir = bpy.path.abspath(settings.export_path)
         os.makedirs(export_dir, exist_ok=True)
-
+        
         filepath = os.path.join(export_dir, f"{settings.export_name or 'mesh'}.fbx")
-
+        
+        # Export FBX
         bpy.ops.export_scene.fbx(
             filepath=filepath,
             use_selection=True,
@@ -1058,263 +578,64 @@ class FROSTY_OT_export_fbx(Operator):
             primary_bone_axis='Y',
             secondary_bone_axis='X',
         )
-
-        show_notification(self, f"Exported {len(lod_objects)} meshes to:\n{filepath}", icon='CHECKMARK')
+        
+        self.report({'INFO'}, f"Exported {len(lod_objects)} meshes to: {filepath}")
         return {'FINISHED'}
 
 
 class FROSTY_OT_cleanup_lods(Operator):
     bl_idname = "frosty.cleanup_lods"
-    bl_label = "Remove Generated LODs (Keep LOD0)"
-    bl_description = "Delete all generated LOD1+ meshes while keeping LOD0 (your source meshes)"
+    bl_label = "Remove Generated LODs"
+    bl_description = "Delete all generated LOD1+ meshes (keeps LOD0)"
     bl_options = {'REGISTER', 'UNDO'}
-
-    def invoke(self, context, event):
-        prefs = get_prefs()
-        if prefs.confirm_destructive:
-            return context.window_manager.invoke_confirm(self, event)
-        return self.execute(context)
-
+    
     def execute(self, context):
         count = 0
-
+        
         for obj in list(bpy.data.objects):
             if obj.type != 'MESH':
                 continue
-
-            name = obj.name.lower()
-
-            if ':lod' in name and not name.endswith(':lod0'):
-                mesh = obj.data
+            if not obj.get(MANAGED_PROP, False):
+                continue
+            
+            lod_level = obj.get(LOD_PROP, 0)
+            if lod_level > 0:
                 bpy.data.objects.remove(obj, do_unlink=True)
-
-                if mesh and mesh.users == 0:
-                    bpy.data.meshes.remove(mesh)
-
                 count += 1
-
-        self.report({'INFO'}, f"Removed {count} LODs (kept LOD0)")
+        
+        self.report({'INFO'}, f"Removed {count} LOD meshes")
         return {'FINISHED'}
 
 
-class FROSTY_OT_select_lod(Operator):
-    bl_idname = "frosty.select_lod"
-    bl_label = "Select"
-    bl_description = "Select all meshes of this LOD level"
+class FROSTY_OT_clear_all(Operator):
+    bl_idname = "frosty.clear_all"
+    bl_label = "Clear All Assignments"
+    bl_description = "Clear all mesh assignments from slots"
     bl_options = {'REGISTER', 'UNDO'}
-    lod_level: IntProperty(default=0)
-
-    def execute(self, context):
-        bpy.ops.object.select_all(action='DESELECT')
-        count = 0
-        for obj in bpy.data.objects:
-            if obj.type == 'MESH' and obj.name.lower().endswith(f':lod{self.lod_level}'):
-                obj.select_set(True)
-                count += 1
-                if count == 1:
-                    context.view_layer.objects.active = obj
-        self.report({'INFO'}, f"Selected {count} LOD{self.lod_level} meshes")
-        return {'FINISHED'}
-
-
-class FROSTY_OT_isolate_lod(Operator):
-    bl_idname = "frosty.isolate_lod"
-    bl_label = "Isolate"
-    bl_description = "Show only this LOD level, hide all others"
-    bl_options = {'REGISTER', 'UNDO'}
-    lod_level: IntProperty(default=0)
-
-    def execute(self, context):
-        for obj in bpy.data.objects:
-            if ':lod' in obj.name.lower() and obj.type == 'MESH':
-                obj.hide_viewport = not obj.name.lower().endswith(f':lod{self.lod_level}')
-        self.report({'INFO'}, f"Isolated LOD{self.lod_level}")
-        return {'FINISHED'}
-
-
-class FROSTY_OT_show_all(Operator):
-    bl_idname = "frosty.show_all"
-    bl_label = "Show All"
-    bl_description = "Unhide all LOD meshes"
-    bl_options = {'REGISTER', 'UNDO'}
-
-    def execute(self, context):
-        for obj in bpy.data.objects:
-            if ':lod' in obj.name.lower():
-                obj.hide_viewport = False
-        return {'FINISHED'}
-
-
-class FROSTY_OT_open_preferences(Operator):
-    bl_idname = "frosty.open_preferences"
-    bl_label = "Preferences"
-    bl_description = "Open addon preferences to configure defaults"
     
     def execute(self, context):
-        bpy.ops.preferences.addon_show(module=__name__)
+        settings = context.scene.frosty_lod_settings
+        
+        for slot in settings.material_slots:
+            slot.mesh_object = None
+        
+        self.report({'INFO'}, "Cleared all assignments")
         return {'FINISHED'}
 
 
-# ============================================================================
-# TRANSFORM PREP TOOLS
-# ============================================================================
-
-class FROSTY_OT_prep_transforms(Operator):
-    """Prepare mesh transforms for Frostbite (90° X rotation workflow)"""
-    bl_idname = "frosty.prep_transforms"
-    bl_label = "Prep Transforms for Frostbite"
-    bl_description = "Complete transform preparation: clears parents, applies transforms, rotates for Frostbite coordinates, and re-parents to armature"
-    bl_options = {'REGISTER', 'UNDO'}
-
-    @classmethod
-    def poll(cls, context):
-        return any(obj.type in {'MESH', 'ARMATURE'} for obj in context.selected_objects)
-
+class FROSTY_OT_open_docs(Operator):
+    bl_idname = "frosty.open_docs"
+    bl_label = "Open Documentation"
+    bl_description = "Open online documentation"
+    
     def execute(self, context):
-        meshes = [obj for obj in context.selected_objects if obj.type == 'MESH']
-        armature = None
-        
-        for obj in context.selected_objects:
-            if obj.type == 'ARMATURE':
-                armature = obj
-                break
-        
-        if not armature:
-            for mesh in meshes:
-                arm = find_armature(mesh)
-                if arm:
-                    armature = arm
-                    break
-        
-        if not meshes:
-            self.report({'ERROR'}, "No meshes selected")
-            return {'CANCELLED'}
-        
-        bpy.ops.object.select_all(action='DESELECT')
-        for mesh in meshes:
-            mesh.select_set(True)
-        context.view_layer.objects.active = meshes[0]
-        bpy.ops.object.parent_clear(type='CLEAR_KEEP_TRANSFORM')
-        
-        bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
-        
-        if armature:
-            bpy.ops.object.select_all(action='DESELECT')
-            armature.select_set(True)
-            context.view_layer.objects.active = armature
-            bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
-        
-        all_objects = meshes + ([armature] if armature else [])
-        bpy.ops.object.select_all(action='DESELECT')
-        for obj in all_objects:
-            obj.select_set(True)
-        context.view_layer.objects.active = all_objects[0]
-        bpy.ops.transform.rotate(value=math.radians(-90), orient_axis='X')
-        
-        bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
-        
-        bpy.ops.transform.rotate(value=math.radians(90), orient_axis='X')
-        
-        if armature:
-            bpy.ops.object.select_all(action='DESELECT')
-            for mesh in meshes:
-                mesh.select_set(True)
-            armature.select_set(True)
-            context.view_layer.objects.active = armature
-            bpy.ops.object.parent_set(type='ARMATURE')
-        
-        bpy.ops.object.select_all(action='DESELECT')
-        for mesh in meshes:
-            mesh.select_set(True)
-        
-        show_notification(self, f"Prepared transforms for {len(meshes)} meshes", icon='CHECKMARK')
-        return {'FINISHED'}
-
-
-class FROSTY_OT_rename_lod0_back(Operator):
-    bl_idname = "frosty.rename_lod0_back"
-    bl_label = "Rename LOD0 Back"
-    bl_description = "Remove the :lod0 suffix from LOD0 meshes to restore original names"
-    bl_options = {'REGISTER', 'UNDO'}
-
-    def execute(self, context):
-        renamed = 0
-        for obj in bpy.data.objects:
-            if obj.type == 'MESH' and obj.name.lower().endswith(':lod0'):
-                new_name = obj.name[:-5]
-                obj.name = new_name
-                obj.data.name = new_name
-                renamed += 1
-        
-        self.report({'INFO'}, f"Renamed {renamed} meshes")
-        return {'FINISHED'}
-
-
-class FROSTY_OT_print_poly_counts(Operator):
-    bl_idname = "frosty.print_poly_counts"
-    bl_label = "Print Poly Counts"
-    bl_description = "Print detailed polygon counts per LOD level to the console"
-
-    def execute(self, context):
-        counts = get_poly_counts_by_lod()
-        
-        if not counts:
-            self.report({'WARNING'}, "No LODs found")
-            return {'CANCELLED'}
-        
-        print("\n" + "="*40)
-        print("POLYGON COUNTS BY LOD")
-        print("="*40)
-        
-        lod0_count = counts.get(0, 0)
-        for lod in sorted(counts.keys()):
-            count = counts[lod]
-            if lod == 0:
-                print(f"  LOD{lod}: {count:,} polys (100%)")
-            else:
-                pct = (count / lod0_count * 100) if lod0_count else 0
-                print(f"  LOD{lod}: {count:,} polys ({pct:.1f}%)")
-        
-        print("="*40 + "\n")
-        
-        self.report({'INFO'}, f"Poly counts printed to console")
+        import webbrowser
+        webbrowser.open("https://github.com/claymcdonald/frosty-mesh-tools/wiki")
         return {'FINISHED'}
 
 
 # ============================================================================
-# UI LIST
-# ============================================================================
-
-class FROSTY_UL_material_slots(bpy.types.UIList):
-    def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
-        slot = item
-        row = layout.row(align=True)
-        
-        # Enable checkbox
-        row.prop(slot, "enabled", text="")
-        
-        # Main content (dimmed if disabled)
-        sub = row.row(align=True)
-        sub.active = slot.enabled
-        
-        # Material name
-        sub.label(text=slot.name)
-        
-        # LOD range
-        sub.label(text=f"L{slot.min_lod}-{slot.max_lod}")
-        
-        # Poly count (if assigned)
-        if slot.source_object and is_valid(slot.source_object):
-            poly_count = get_mesh_poly_count(slot.source_object)
-            sub.label(text=f"{poly_count:,}")
-            sub.label(text="", icon='CHECKMARK')
-        else:
-            sub.label(text="--")
-            sub.label(text="", icon='BLANK1')
-
-
-# ============================================================================
-# UI PANEL
+# UI PANELS
 # ============================================================================
 
 class FROSTY_PT_main(Panel):
@@ -1322,304 +643,135 @@ class FROSTY_PT_main(Panel):
     bl_idname = "FROSTY_PT_main"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
-    bl_category = 'Frosty Mesh'
-
+    bl_category = "Frosty Mesh"
+    
     def draw(self, context):
         layout = self.layout
         settings = context.scene.frosty_lod_settings
-        prefs = get_prefs()
         
-        # Header row
-        row = layout.row()
-        row.label(text="v1.0-beta", icon='MODIFIER')
-        sub = row.row(align=True)
-        sub.operator("frosty.open_docs", text="", icon='HELP')
-        sub.operator("frosty.open_preferences", text="", icon='PREFERENCES')
-        
-        # Tab buttons
+        # Tab selector
         row = layout.row(align=True)
-        row.scale_y = 1.2
-        row.prop_enum(settings, "ui_tab", 'TEMPLATE')
-        row.prop_enum(settings, "ui_tab", 'ASSIGN')
-        row.prop_enum(settings, "ui_tab", 'GENERATE')
-        row.prop_enum(settings, "ui_tab", 'EXPORT')
-        row.prop_enum(settings, "ui_tab", 'TOOLS')
+        row.prop(settings, "active_tab", expand=True)
         
         layout.separator()
         
-        # Status bar
-        if settings.template_path:
-            box = layout.box()
-            row = box.row()
-            row.label(text=f"Template: {settings.template_name}", icon='CHECKMARK')
-            assigned, unassigned, total = get_slot_status(settings)
-            if unassigned > 0:
-                row.label(text=f"({unassigned} missing)", icon='ERROR')
-            
-            lods = get_generated_lods()
-            live_mods = len(get_lods_with_modifiers())
-            if lods:
-                if live_mods > 0:
-                    box.label(text=f"LODs: {len(lods)} ({live_mods} with live modifiers)", icon='MODIFIER')
-                else:
-                    box.label(text=f"LODs: {len(lods)} (applied)", icon='MESH_DATA')
-        
-        layout.separator()
-        
-        # Tab content
-        if settings.ui_tab == 'TEMPLATE':
-            self.draw_template_tab(context, layout, settings, prefs)
-        elif settings.ui_tab == 'ASSIGN':
-            self.draw_assign_tab(context, layout, settings)
-        elif settings.ui_tab == 'GENERATE':
-            self.draw_generate_tab(context, layout, settings)
-        elif settings.ui_tab == 'EXPORT':
-            self.draw_export_tab(context, layout, settings)
-        elif settings.ui_tab == 'TOOLS':
-            self.draw_tools_tab(context, layout, settings)
+        # Draw active tab
+        if settings.active_tab == 'TEMPLATE':
+            self.draw_template_tab(layout, context, settings)
+        elif settings.active_tab == 'LODS':
+            self.draw_lods_tab(layout, context, settings)
+        elif settings.active_tab == 'EXPORT':
+            self.draw_export_tab(layout, context, settings)
+        elif settings.active_tab == 'SETTINGS':
+            self.draw_settings_tab(layout, context, settings)
     
-    def draw_template_tab(self, context, layout, settings, prefs):
+    def draw_template_tab(self, layout, context, settings):
+        # Template folder
         box = layout.box()
-        box.label(text="Samples Folder", icon='FILE_FOLDER')
+        box.label(text="Templates Folder", icon='FILE_FOLDER')
         box.prop(settings, "samples_folder", text="")
         
-        if settings.samples_folder and os.path.exists(settings.samples_folder):
-            row = box.row(align=True)
-            row.prop(settings, "selected_sample", text="")
-            row.operator("frosty.refresh_samples", text="", icon='FILE_REFRESH')
+        if settings.samples_folder:
+            box.prop(settings, "selected_sample", text="")
         
         layout.separator()
         
-        row = layout.row(align=True)
-        row.operator("frosty.load_template", text="Browse...", icon='FILEBROWSER')
-        if prefs.remember_last_template and prefs.last_template_path:
-            row.operator("frosty.load_last_template", text="Last", icon='LOOP_BACK')
-        
+        # Manual load
         box = layout.box()
-        col = box.column(align=True)
-        col.scale_y = 0.85
-        col.label(text="Setup:", icon='INFO')
-        col.label(text="1. Set Samples folder")
-        col.label(text="2. Pick template from dropdown")
-        col.separator()
-        col.label(text="Select *_mesh.res (not blocks.res)")
+        box.label(text="Or Load Directly", icon='IMPORT')
+        box.operator("frosty.load_template", text="Browse mesh.res...", icon='FILEBROWSER')
+        
+        if settings.template_name:
+            layout.separator()
+            box = layout.box()
+            box.label(text=f"Loaded: {settings.template_name}", icon='CHECKMARK')
+            box.label(text=f"Materials: {len(settings.material_slots)}")
     
-    def draw_assign_tab(self, context, layout, settings):
+    def draw_lods_tab(self, layout, context, settings):
         if not settings.material_slots:
             layout.label(text="Load a template first", icon='INFO')
             return
         
-        # Header for list columns
-        row = layout.row()
-        row.label(text="")  # Enable column
-        row.label(text="Material")
-        row.label(text="LODs")
-        row.label(text="Polys")
-        row.label(text="")  # Status column
-        
-        layout.template_list("FROSTY_UL_material_slots", "", settings, "material_slots",
-                            settings, "active_material_index", rows=6)
-        
-        if settings.active_material_index < len(settings.material_slots):
-            slot = settings.material_slots[settings.active_material_index]
-            
-            box = layout.box()
-            box.label(text=f"{slot.name}", icon='MATERIAL')
-            box.label(text=f"LOD Range: {slot.min_lod} - {slot.max_lod}")
-            
-            if slot.source_object and is_valid(slot.source_object):
-                poly_count = get_mesh_poly_count(slot.source_object)
-                box.label(text=f"Polygons: {poly_count:,}")
-            
-            box.separator()
-            box.prop(slot, "source_object", text="")
-            row = box.row(align=True)
-            row.operator("frosty.assign_selected", text="Assign Selected", icon='EYEDROPPER')
-            row.operator("frosty.clear_assignment", text="", icon='X')
-        
-        assigned, unassigned, total = get_slot_status(settings)
-        layout.label(text=f"Assigned: {assigned} / {total}", 
-                    icon='CHECKMARK' if unassigned == 0 else 'ERROR')
-    
-    def draw_generate_tab(self, context, layout, settings):
-        # Validation Panel
-        issues, warnings, ready = get_validation_status(settings)
-        
-        if issues or warnings:
-            box = layout.box()
-            box.label(text="Validation", icon='STATUSBAR')
-            
-            for item in ready:
-                row = box.row()
-                row.label(text=item, icon='CHECKMARK')
-            
-            for item in warnings:
-                row = box.row()
-                row.label(text=item, icon='ERROR')
-            
-            for item in issues:
-                row = box.row()
-                row.label(text=item, icon='CANCEL')
-            
-            layout.separator()
-        
-        # Preset and ratios
-        layout.prop(settings, "preset")
-        
-        col = layout.column(align=True)
-        col.prop(settings, "lod1_ratio", slider=True)
-        col.prop(settings, "ratio_step", slider=True)
-        
-        # Preview
+        # Material slots with LOD info
         box = layout.box()
-        box.label(text="Preview:", icon='VIEWZOOM')
+        box.label(text="Material Assignments", icon='MATERIAL')
         
-        poly_counts = get_poly_counts_by_lod()
-        
-        row = box.row()
-        col1 = row.column(align=True)
-        col2 = row.column(align=True)
-        col1.scale_y = 0.8
-        col2.scale_y = 0.8
-        
-        for i in range(3):
-            r = calculate_ratio_for_lod(settings, i)
-            if i in poly_counts:
-                col1.label(text=f"LOD{i}: {r*100:.0f}% ({poly_counts[i]:,})")
+        for i, slot in enumerate(settings.material_slots):
+            row = box.row(align=True)
+            row.prop(slot, "enabled", text="")
+            
+            # Show material name with LOD range
+            lod_info = f"[LOD {slot.min_lod}-{slot.max_lod}]"
+            row.label(text=f"{slot.name} {lod_info}")
+            
+            if slot.mesh_object:
+                row.label(text=slot.mesh_object.name, icon='MESH_DATA')
             else:
-                col1.label(text=f"LOD{i}: {r*100:.0f}%")
-        for i in range(3, 6):
-            r = calculate_ratio_for_lod(settings, i)
-            if i in poly_counts:
-                col2.label(text=f"LOD{i}: {r*100:.0f}% ({poly_counts[i]:,})")
-            else:
-                col2.label(text=f"LOD{i}: {r*100:.0f}%")
+                row.operator("frosty.assign_mesh", text="Assign", icon='ADD').slot_index = i
         
         layout.separator()
         
-        # Collapsible Advanced section
+        # LOD settings
         box = layout.box()
-        row = box.row()
-        row.prop(settings, "show_advanced", 
-                icon='TRIA_DOWN' if settings.show_advanced else 'TRIA_RIGHT',
-                icon_only=True, emboss=False)
-        row.label(text="Advanced Settings")
+        box.label(text="LOD Settings", icon='MOD_DECIM')
+        box.prop(settings, "preset")
+        box.prop(settings, "lod_count")
         
-        if settings.show_advanced:
-            box.prop(settings, "decimation_method")
-            box.prop(settings, "symmetry_axis")
+        row = box.row(align=True)
+        row.prop(settings, "lod1_ratio")
+        row.prop(settings, "ratio_step")
         
         layout.separator()
         
         # Generate button
-        row = layout.row()
-        row.scale_y = 1.4
-        row.enabled = len(issues) == 0
-        row.operator("frosty.generate_lods", icon='MOD_DECIM')
+        col = layout.column(align=True)
+        col.scale_y = 1.5
+        col.operator("frosty.generate_lods", text="Generate LODs", icon='MOD_DECIM')
         
-        # Live modifier controls
-        live_count = len(get_lods_with_modifiers())
-        if live_count > 0:
-            layout.separator()
-            box = layout.box()
-            box.label(text=f"{live_count} LODs with live modifiers", icon='MODIFIER')
-            row = box.row(align=True)
-            row.operator("frosty.update_ratios", text="Update Ratios", icon='FILE_REFRESH')
-            row.operator("frosty.apply_modifiers", text="Apply All", icon='CHECKMARK')
-        
-        layout.separator()
-        
-        # Utilities
-        box = layout.box()
-        box.label(text="Utilities", icon='TOOL_SETTINGS')
-        
-        col = box.column(align=True)
-        col.label(text="Select LOD:")
-        row = col.row(align=True)
-        for i in range(6):
-            row.operator("frosty.select_lod", text=str(i)).lod_level = i
-        
-        col.separator()
-        col.label(text="Isolate LOD:")
-        row = col.row(align=True)
-        for i in range(6):
-            row.operator("frosty.isolate_lod", text=str(i)).lod_level = i
-        col.operator("frosty.show_all", text="Show All")
-        
-        col.separator()
-        row = col.row(align=True)
-        row.operator("frosty.organize_collections", icon='OUTLINER_COLLECTION')
-        row.operator("frosty.print_poly_counts", text="", icon='INFO')
-        col.operator("frosty.cleanup_lods", text="Remove Generated LODs", icon='TRASH')
+        layout.operator("frosty.cleanup_lods", text="Remove LODs", icon='TRASH')
     
-    def draw_export_tab(self, context, layout, settings):
+    def draw_export_tab(self, layout, context, settings):
+        # Export settings
         box = layout.box()
         box.label(text="Export Settings", icon='EXPORT')
-        box.prop(settings, "export_path", text="Path")
-        box.prop(settings, "export_name", text="Name")
-        row = box.row()
-        row.prop(settings, "export_scale")
-        row.label(text="(0.01 = game)")
-        
-        lod_count = len(get_generated_lods())
-        live_count = len(get_lods_with_modifiers())
+        box.prop(settings, "export_path")
+        box.prop(settings, "export_name")
+        box.prop(settings, "export_scale")
+        box.prop(settings, "export_filter")
         
         layout.separator()
         
-        # Export validation
-        if lod_count == 0:
-            layout.label(text="No LODs to export", icon='ERROR')
-        elif live_count > 0:
-            layout.label(text=f"Ready: {lod_count} LODs (modifiers applied on export)", icon='INFO')
-        else:
-            layout.label(text=f"Ready: {lod_count} LODs", icon='CHECKMARK')
+        # Export button
+        col = layout.column(align=True)
+        col.scale_y = 1.5
+        col.operator("frosty.export_fbx", text="Export FBX", icon='EXPORT')
         
-        row = layout.row()
-        row.scale_y = 1.4
-        row.enabled = lod_count > 0
-        row.operator("frosty.export_fbx", icon='EXPORT')
-        
+        # Workflow info
         layout.separator()
-        layout.label(text="Armatures included if visible", icon='INFO')
+        box = layout.box()
+        box.label(text="Workflow:", icon='INFO')
+        col = box.column(align=True)
+        col.scale_y = 0.8
+        col.label(text="1. Export FBX")
+        col.label(text="2. In Frosty: Right-click MeshSet → Import")
     
-    def draw_tools_tab(self, context, layout, settings):
+    def draw_settings_tab(self, layout, context, settings):
         box = layout.box()
-        box.label(text="Transform Prep (Frostbite)", icon='ORIENTATION_GIMBAL')
-        
-        col = box.column(align=True)
-        col.scale_y = 1.2
-        col.operator("frosty.prep_transforms", text="Full Transform Prep", icon='CON_ROTLIKE')
-        
-        box.separator()
-        col = box.column(align=True)
-        col.scale_y = 0.85
-        col.label(text="Full prep does:")
-        col.label(text="1. Clear parents (keep transform)")
-        col.label(text="2. Apply all transforms")
-        col.label(text="3. Rotate -90° X, apply")
-        col.label(text="4. Rotate +90° X")
-        col.label(text="5. Re-parent to armature")
+        box.label(text="Mesh Naming", icon='SORTALPHA')
+        box.prop(settings, "auto_rename_meshes")
         
         layout.separator()
         
         box = layout.box()
-        box.label(text="Mesh Tools", icon='MESH_DATA')
-        col = box.column(align=True)
-        col.operator("frosty.rename_lod0_back", icon='LOOP_BACK')
-
-
-# ============================================================================
-# HANDLERS
-# ============================================================================
-
-@bpy.app.handlers.persistent
-def on_load_post(dummy):
-    try:
-        prefs = get_prefs()
-        if prefs.auto_apply_defaults:
-            apply_defaults_to_scene(bpy.context)
-    except:
-        pass
+        box.label(text="Help", icon='QUESTION')
+        box.operator("frosty.open_docs", text="Open Documentation", icon='URL')
+        
+        layout.separator()
+        
+        box = layout.box()
+        box.label(text="Version", icon='INFO')
+        version = bl_info.get("version", (0, 0, 0))
+        box.label(text=f"Frosty Mesh Tools v{version[0]}.{version[1]}.{version[2]}")
 
 
 # ============================================================================
@@ -1627,45 +779,35 @@ def on_load_post(dummy):
 # ============================================================================
 
 classes = (
-    FrostyLODPreferences,
-    FROSTY_OT_apply_defaults_to_scene,
-    FROSTY_OT_reset_preferences,
-    FROSTY_OT_open_docs,
-    FrostyMaterialSlot,
+    MaterialSlotItem,
     FrostyLODSettings,
-    FROSTY_OT_refresh_samples,
+    FrostyPreferences,
     FROSTY_OT_load_template,
-    FROSTY_OT_load_last_template,
-    FROSTY_OT_assign_selected,
-    FROSTY_OT_clear_assignment,
+    FROSTY_OT_assign_mesh,
     FROSTY_OT_generate_lods,
-    FROSTY_OT_update_ratios,
-    FROSTY_OT_apply_modifiers,
-    FROSTY_OT_organize_collections,
     FROSTY_OT_export_fbx,
     FROSTY_OT_cleanup_lods,
-    FROSTY_OT_select_lod,
-    FROSTY_OT_isolate_lod,
-    FROSTY_OT_show_all,
-    FROSTY_OT_open_preferences,
-    FROSTY_OT_prep_transforms,
-    FROSTY_OT_rename_lod0_back,
-    FROSTY_OT_print_poly_counts,
-    FROSTY_UL_material_slots,
+    FROSTY_OT_clear_all,
+    FROSTY_OT_open_docs,
     FROSTY_PT_main,
 )
+
 
 def register():
     for cls in classes:
         bpy.utils.register_class(cls)
-    bpy.types.Scene.frosty_lod_settings = bpy.props.PointerProperty(type=FrostyLODSettings)
-    bpy.app.handlers.load_post.append(on_load_post)
+    
+    bpy.types.Scene.frosty_lod_settings = PointerProperty(type=FrostyLODSettings)
+    
+    print(f"Frosty Mesh Tools v{bl_info['version'][0]}.{bl_info['version'][1]}.{bl_info['version'][2]} registered")
+
 
 def unregister():
-    bpy.app.handlers.load_post.remove(on_load_post)
+    del bpy.types.Scene.frosty_lod_settings
+    
     for cls in reversed(classes):
         bpy.utils.unregister_class(cls)
-    del bpy.types.Scene.frosty_lod_settings
+
 
 if __name__ == "__main__":
     register()
