@@ -72,6 +72,12 @@ Exports all meshes in the template collection as FBX with Frosty-compatible sett
 
 ---
 
+## Companion Tool
+
+This addon is designed to be used alongside [Frosty Auto LOD Generator](https://github.com/FrostyForge/Frosty-Auto-LOD-Generator), which handles mesh LOD generation on the Frosty side. Use Frosty Mesh Tools in Blender for renaming, transforms, and export, then use the Auto LOD Generator for importing into Frosty.
+
+---
+
 ## License
 
 Free for personal and non-commercial use.  
